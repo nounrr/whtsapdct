@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const qrcodeTerminal = require('qrcode-terminal');
 
 const app = express();
 const server = http.createServer(app);
@@ -51,6 +52,12 @@ client.on('qr', (qr) => {
   console.log('QR Code généré');
   isClientReady = false;
   lastQr = qr;
+  try {
+    console.log('Scanne ce QR avec WhatsApp > Appareils liés (Linked devices):');
+    qrcodeTerminal.generate(qr, { small: true });
+  } catch (e) {
+    console.warn('Impossible d\'afficher le QR en ASCII:', e?.message);
+  }
   io.emit('qr', qr);
 });
 
@@ -149,42 +156,8 @@ app.get('/status', (_req, res) => {
   res.json({ ready: isClientReady, hasQr: !!lastQr });
 });
 
-app.get('/qr', (req, res) => {
+app.get('/qr', (_req, res) => {
   if (!lastQr) return res.status(404).json({ error: 'no_qr' });
-  const wantsHtml = (req.headers['accept'] || '').includes('text/html') || 'html' in req.query;
-  if (wantsHtml) {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.end(`<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QR WhatsApp</title>
-  <style>
-    html,body{height:100%;margin:0;}
-    body{display:flex;align-items:center;justify-content:center;background:#0b141a;color:#e9edef;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    .card{background:#111b21;border-radius:16px;padding:24px 28px;box-shadow:0 8px 30px rgba(0,0,0,.35);border:1px solid #1f2c33}
-    h1{font-size:16px;margin:0 0 12px;color:#e9edef}
-    #qrcode{display:flex;align-items:center;justify-content:center;background:#0b141a;border-radius:12px;padding:12px}
-    canvas{image-rendering:pixelated}
-    .hint{margin-top:10px;font-size:12px;color:#8696a0;text-align:center}
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
-></head>
-<body>
-  <div class="card">
-    <h1>Scanne ce QR avec WhatsApp</h1>
-    <div id="qrcode"></div>
-    <div class="hint">Si le QR expire, rafraîchis la page.</div>
-  </div>
-  <script>
-    const data = ${JSON.stringify(lastQr)};
-    const el = document.getElementById('qrcode');
-    QRCode.toCanvas(el, data, { width: 320, margin: 1 }, (err) => { if (err) console.error(err); });
-  </script>
-</body>
-</html>`);
-  }
   res.json({ qr: lastQr });
 });
 
