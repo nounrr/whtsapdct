@@ -1,19 +1,21 @@
 {
-  "name": "whtsp-service",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "main": "src/index.js",
+  "name": "whtsapnode",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "clean-sessions": "node -e \"import fs from 'fs'; fs.rmSync('./.wwebjs_auth', { recursive: true, force: true }); console.log('Sessions cleared');\""
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "dependencies": {
-    "express": "^4.19.2",
-    "node-fetch": "^3.3.2",
+    "express": "^4.21.2",
+    "dotenv": "^16.4.5",
     "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.25.0",
-    "puppeteer": "^22.7.1"
+    "socket.io": "^4.8.1",
+    "whatsapp-web.js": "^1.34.2"
   }
 }
