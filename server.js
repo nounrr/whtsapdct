@@ -28,13 +28,27 @@ const client = new Client({
     headless: true,
     // If Chrome is installed locally, you can set CHROME_PATH env to its executable
     executablePath: process.env.CHROME_PATH,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote']
   }
 });
 
 let isClientReady = false;
 let lastQr = null;
 let lastState = 'INIT';
+let lastReadyAt = null;
+let reinitTimer = null;
+function scheduleReinit(delayMs = 3000) {
+  if (reinitTimer) return;
+  reinitTimer = setTimeout(() => {
+    reinitTimer = null;
+    try {
+      console.log('Reinitialisation du client WhatsApp...');
+      client.initialize();
+    } catch (e) {
+      console.warn('Erreur lors de la réinitialisation:', e?.message);
+    }
+  }, delayMs);
+}
 
 // CORS (allow calls from frontend)
 app.use((req, res, next) => {
@@ -66,6 +80,7 @@ client.on('ready', () => {
   console.log('Client prêt ✅');
   isClientReady = true;
   lastState = 'CONNECTED';
+  lastReadyAt = Date.now();
   io.emit('ready');
 });
 
@@ -79,6 +94,7 @@ client.on('auth_failure', (msg) => {
   isClientReady = false;
   lastState = 'AUTH_FAILURE';
   io.emit('auth_failure', msg);
+  scheduleReinit(5000);
 });
 
 client.on('disconnected', (reason) => {
@@ -86,6 +102,7 @@ client.on('disconnected', (reason) => {
   isClientReady = false;
   lastState = 'DISCONNECTED';
   io.emit('disconnected', reason);
+  scheduleReinit(3000);
 });
 
 client.on('change_state', (state) => {
@@ -169,7 +186,13 @@ app.get('/status', async (_req, res) => {
   } catch (e) {
     // ignore if session not available
   }
-  res.json({ ready: isClientReady && state === 'CONNECTED', state, hasQr: !!lastQr });
+  res.json({
+    ready: isClientReady && state === 'CONNECTED',
+    state,
+    hasQr: !!lastQr,
+    lastReadyAt,
+    now: Date.now()
+  });
 });
 
 app.get('/qr', (_req, res) => {
