@@ -34,6 +34,7 @@ const client = new Client({
 
 let isClientReady = false;
 let lastQr = null;
+let lastState = 'INIT';
 
 // CORS (allow calls from frontend)
 app.use((req, res, next) => {
@@ -64,6 +65,7 @@ client.on('qr', (qr) => {
 client.on('ready', () => {
   console.log('Client prêt ✅');
   isClientReady = true;
+  lastState = 'CONNECTED';
   io.emit('ready');
 });
 
@@ -74,12 +76,20 @@ client.on('authenticated', () => {
 
 client.on('auth_failure', (msg) => {
   console.error('Erreur d\'authentification :', msg);
+  isClientReady = false;
+  lastState = 'AUTH_FAILURE';
   io.emit('auth_failure', msg);
 });
 
 client.on('disconnected', (reason) => {
   console.log('Déconnecté :', reason);
+  isClientReady = false;
+  lastState = 'DISCONNECTED';
   io.emit('disconnected', reason);
+});
+
+client.on('change_state', (state) => {
+  lastState = state || lastState;
 });
 
 // Gérer les connexions Socket.IO
@@ -152,8 +162,14 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.get('/status', (_req, res) => {
-  res.json({ ready: isClientReady, hasQr: !!lastQr });
+app.get('/status', async (_req, res) => {
+  let state = lastState;
+  try {
+    state = await client.getState();
+  } catch (e) {
+    // ignore if session not available
+  }
+  res.json({ ready: isClientReady && state === 'CONNECTED', state, hasQr: !!lastQr });
 });
 
 app.get('/qr', (_req, res) => {
@@ -165,7 +181,11 @@ app.get('/qr', (_req, res) => {
 app.post('/send-text', requireApiKey, async (req, res) => {
   try {
     const { phone, text } = req.body || {};
-    if (!isClientReady) return res.status(503).json({ ok: false, error: 'wa_not_ready' });
+    let state = 'UNKNOWN';
+    try { state = await client.getState(); } catch (_) {}
+    if (!isClientReady || state !== 'CONNECTED') {
+      return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
+    }
     if (!phone || !text) return res.status(400).json({ ok: false, error: 'phone_and_text_required' });
     const jid = normalizeToJid(phone);
     const msg = await client.sendMessage(jid, text);
@@ -180,7 +200,11 @@ app.post('/send-text', requireApiKey, async (req, res) => {
 app.post('/send-template', requireApiKey, async (req, res) => {
   try {
     const { phone, templateKey, params } = req.body || {};
-    if (!isClientReady) return res.status(503).json({ ok: false, error: 'wa_not_ready' });
+    let state = 'UNKNOWN';
+    try { state = await client.getState(); } catch (_) {}
+    if (!isClientReady || state !== 'CONNECTED') {
+      return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
+    }
     if (!phone || !templateKey) return res.status(400).json({ ok: false, error: 'phone_and_templateKey_required' });
 
     const apiBase = process.env.API_BASE || 'http://localhost';
