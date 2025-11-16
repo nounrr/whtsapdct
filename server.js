@@ -23,7 +23,10 @@ function requireApiKey(req, res, next) {
 }
 
 const client = new Client({
-  authStrategy: new LocalAuth(),
+  authStrategy: new LocalAuth({
+    clientId: process.env.WWEBJS_CLIENT_ID || 'default',
+    dataPath: process.env.WWEBJS_AUTH_DIR ? path.resolve(process.env.WWEBJS_AUTH_DIR) : undefined,
+  }),
   puppeteer: {
     headless: true,
     // If Chrome is installed locally, you can set CHROME_PATH env to its executable
@@ -67,6 +70,7 @@ client.on('qr', (qr) => {
   console.log('QR Code généré');
   isClientReady = false;
   lastQr = qr;
+  lastState = 'QR';
   try {
     console.log('Scanne ce QR avec WhatsApp > Appareils liés (Linked devices):');
     qrcodeTerminal.generate(qr, { small: true });
@@ -81,11 +85,15 @@ client.on('ready', () => {
   isClientReady = true;
   lastState = 'CONNECTED';
   lastReadyAt = Date.now();
+  // Une fois prêt, on n'a plus de QR actif
+  lastQr = null;
   io.emit('ready');
 });
 
 client.on('authenticated', () => {
   console.log('Authentifié ✅');
+  // QR n'est plus pertinent après authentification
+  lastQr = null;
   io.emit('authenticated');
 });
 
@@ -180,14 +188,17 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/status', async (_req, res) => {
+  // Utilise l'état en cache pour éviter les retours "UNKNOWN" intermittents
   let state = lastState;
   try {
-    state = await client.getState();
+    // Essayez d'obtenir l'état temps-réel, mais retombez sur le cache en cas d'erreur
+    const realtime = await client.getState();
+    if (realtime) state = realtime;
   } catch (e) {
-    // ignore if session not available
+    // ignore, on garde lastState
   }
   res.json({
-    ready: isClientReady && state === 'CONNECTED',
+    ready: state === 'CONNECTED',
     state,
     hasQr: !!lastQr,
     lastReadyAt,
@@ -204,9 +215,8 @@ app.get('/qr', (_req, res) => {
 app.post('/send-text', requireApiKey, async (req, res) => {
   try {
     const { phone, text } = req.body || {};
-    let state = 'UNKNOWN';
-    try { state = await client.getState(); } catch (_) {}
-    if (!isClientReady || state !== 'CONNECTED') {
+    const state = lastState;
+    if (state !== 'CONNECTED') {
       return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
     }
     if (!phone || !text) return res.status(400).json({ ok: false, error: 'phone_and_text_required' });
@@ -223,9 +233,8 @@ app.post('/send-text', requireApiKey, async (req, res) => {
 app.post('/send-template', requireApiKey, async (req, res) => {
   try {
     const { phone, templateKey, params } = req.body || {};
-    let state = 'UNKNOWN';
-    try { state = await client.getState(); } catch (_) {}
-    if (!isClientReady || state !== 'CONNECTED') {
+    const state = lastState;
+    if (state !== 'CONNECTED') {
       return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
     }
     if (!phone || !templateKey) return res.status(400).json({ ok: false, error: 'phone_and_templateKey_required' });
