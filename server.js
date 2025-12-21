@@ -219,6 +219,11 @@ if (REMINDER_SOURCE === 'api') {
   if (!REMINDER_API_BASE) {
     console.warn('[reminders] REMINDER_SOURCE=api but REMINDER_API_BASE is missing; reminders disabled');
   } else {
+    if (!REMINDER_API_KEY) {
+      console.warn('[reminders] REMINDER_SOURCE=api but REMINDER_API_KEY is missing; backend may return 401');
+    } else {
+      console.log(`[reminders] api auth configured (keyLen=${String(REMINDER_API_KEY).length})`);
+    }
     cron.schedule(
       REMINDER_CRON,
       async () => {

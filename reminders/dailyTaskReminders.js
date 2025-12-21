@@ -37,6 +37,13 @@ async function fetchTasksToRemindFromApi({ apiBase, apiKey, today, tz, onlyEnvoy
   const resp = await fetch(url, { method: 'GET', headers });
   if (!resp.ok) {
     const t = await resp.text();
+    if (resp.status === 401 || resp.status === 403) {
+      const keyInfo = apiKey ? `keyLen=${String(apiKey).length}` : 'keyMissing';
+      throw new Error(
+        `Reminders API unauthorized (${resp.status}) (${keyInfo}). ` +
+          `Check REMINDER_API_KEY matches sirh-back REMINDER_API_KEY and header "X-Api-Key" is allowed. Body=${t}`
+      );
+    }
     throw new Error(`Reminders API failed ${resp.status} ${t}`);
   }
   const data = await resp.json();
