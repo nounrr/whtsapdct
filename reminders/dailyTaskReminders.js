@@ -11,19 +11,30 @@ function sleep(ms) {
 }
 
 function makeReminderText(row) {
-  const fullName = [row.prenom, row.name].filter(Boolean).join(' ').trim() || 'Bonjour';
-  const start = row.effective_start || row.start_date || '';
-  const end = row.effective_end || row.end_date || '';
+  const assignee = [row.prenom, row.name].filter(Boolean).join(' ').trim() || '—';
+
+  const start = row.effective_start || row.start_date || '—';
+  const end = row.effective_end || row.end_date || '—';
   const pct = row.pourcentage ?? 0;
-  const label = row.description || row.title || '';
+  const label = row.description || row.title || `Tâche #${row.id}`;
+
+  const project = row.project_title || row.projectTitle || '—';
+  const list = row.list_title || row.listTitle || '—';
+  const type = row.type || '—';
+  const status = row.status || '—';
 
   return [
-    `Bonjour ${fullName},`,
-    `Rappel: vous avez une tâche en cours dans le SIRH.`,
-    `- Tâche #${row.id}: ${label}`,
-    start || end ? `- Période: ${start || '—'} → ${end || '—'}` : null,
-    `- Statut: ${row.status} | Progression: ${pct}%`,
-  ].filter(Boolean).join('\n');
+    `⏰ Rappel de tâche`,
+    `📝 ${label}`,
+    `📁 Projet: ${project}`,
+    `📋 Liste: ${list}`,
+    `🏷️ Statut: ${status}`,
+    `📌 Type: ${type}`,
+    `📊 Progression: ${pct}%`,
+    `📅 Début: ${start}`,
+    `⏳ Échéance: ${end}`,
+    `👥 Assigné à: ${assignee}`,
+  ].join('\n');
 }
 
 async function fetchTasksToRemindFromApi({ apiBase, apiKey, today, tz, onlyEnvoyerAuto }) {
@@ -51,7 +62,9 @@ async function fetchTasksToRemindFromApi({ apiBase, apiKey, today, tz, onlyEnvoy
 }
 
 async function fetchTasksToRemind(pool, today, { onlyEnvoyerAuto }) {
-  const whereAuto = onlyEnvoyerAuto ? 'AND t.envoyer_auto = 1' : '';
+  // In this codebase, envoyer_auto is used as "already sent" for auto reminders.
+  // When filtering is enabled, keep tasks that are NOT marked as sent.
+  const whereAuto = onlyEnvoyerAuto ? 'AND (t.envoyer_auto IS NULL OR t.envoyer_auto = 0)' : '';
 
   const sql = `
     SELECT
@@ -59,14 +72,19 @@ async function fetchTasksToRemind(pool, today, { onlyEnvoyerAuto }) {
       t.description,
       t.status,
       t.pourcentage,
+      t.type,
       t.start_date,
       t.end_date,
       COALESCE(t.start_date, t.date_debut_prevu) AS effective_start,
       COALESCE(t.end_date, t.date_fin_prevu) AS effective_end,
+      l.title AS list_title,
+      p.titre AS project_title,
       u.name,
       u.prenom,
       u.tel
     FROM todo_tasks t
+    LEFT JOIN todo_lists l ON l.id = t.todo_list_id
+    LEFT JOIN projects p ON p.id = l.project_id
     JOIN users u ON u.id = t.assigned_to
     WHERE
       t.assigned_to IS NOT NULL
