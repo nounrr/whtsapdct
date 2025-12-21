@@ -14,6 +14,9 @@
   "dependencies": {
     "express": "^4.21.2",
     "dotenv": "^16.4.5",
+    "luxon": "^3.5.0",
+    "mysql2": "^3.11.5",
+    "node-cron": "^3.0.3",
     "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.8.1",
     "whatsapp-web.js": "^1.34.2"

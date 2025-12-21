@@ -7,6 +7,10 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const qrcodeTerminal = require('qrcode-terminal');
+const cron = require('node-cron');
+
+const { createPoolFromEnv } = require('./lib/db');
+const { runDailyTaskReminders, runDailyTaskRemindersViaApi } = require('./reminders/dailyTaskReminders');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,10 +27,7 @@ function requireApiKey(req, res, next) {
 }
 
 const client = new Client({
-  authStrategy: new LocalAuth({
-    clientId: process.env.WWEBJS_CLIENT_ID || 'default',
-    dataPath: process.env.WWEBJS_AUTH_DIR ? path.resolve(process.env.WWEBJS_AUTH_DIR) : undefined,
-  }),
+  authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
     // If Chrome is installed locally, you can set CHROME_PATH env to its executable
@@ -34,6 +35,19 @@ const client = new Client({
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote']
   }
 });
+
+const REMINDER_SOURCE = (process.env.REMINDER_SOURCE || 'db').toLowerCase(); // 'db' | 'api'
+
+// DB pool (SIRH back database)
+let dbPool = null;
+if (REMINDER_SOURCE !== 'api') {
+  try {
+    dbPool = createPoolFromEnv();
+    console.log('[db] MySQL pool created');
+  } catch (e) {
+    console.warn('[db] Not configured, reminders disabled until DB_* env vars are set:', e?.message);
+  }
+}
 
 let isClientReady = false;
 let lastQr = null;
@@ -70,7 +84,6 @@ client.on('qr', (qr) => {
   console.log('QR Code généré');
   isClientReady = false;
   lastQr = qr;
-  lastState = 'QR';
   try {
     console.log('Scanne ce QR avec WhatsApp > Appareils liés (Linked devices):');
     qrcodeTerminal.generate(qr, { small: true });
@@ -85,15 +98,11 @@ client.on('ready', () => {
   isClientReady = true;
   lastState = 'CONNECTED';
   lastReadyAt = Date.now();
-  // Une fois prêt, on n'a plus de QR actif
-  lastQr = null;
   io.emit('ready');
 });
 
 client.on('authenticated', () => {
   console.log('Authentifié ✅');
-  // QR n'est plus pertinent après authentification
-  lastQr = null;
   io.emit('authenticated');
 });
 
@@ -182,23 +191,97 @@ function normalizeToJid(phone) {
   return `${digits}@c.us`;
 }
 
+// Daily reminders (08:00)
+const REMINDER_TZ = process.env.REMINDER_TZ || 'Africa/Casablanca';
+const REMINDER_AT = process.env.REMINDER_AT || null; // HH:mm (e.g. 08:00)
+
+function cronFromReminderAt(reminderAt) {
+  if (!reminderAt) return null;
+  const m = String(reminderAt).trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  // node-cron format: minute hour day-of-month month day-of-week
+  return `${minute} ${hour} * * *`;
+}
+
+const REMINDER_CRON = process.env.REMINDER_CRON || cronFromReminderAt(REMINDER_AT) || '0 8 * * *';
+const REMINDER_ONLY_ENVOYER_AUTO = (process.env.REMINDER_ONLY_ENVOYER_AUTO || 'true').toLowerCase() !== 'false';
+const REMINDER_SEND_DELAY_MS = process.env.REMINDER_SEND_DELAY_MS ? Number(process.env.REMINDER_SEND_DELAY_MS) : 600;
+const REMINDER_API_BASE = process.env.REMINDER_API_BASE || null; // e.g. https://example.com/api
+const REMINDER_API_KEY = process.env.REMINDER_API_KEY || process.env.TEMPLATE_API_KEY || null;
+
+function isWaConnected() {
+  return lastState === 'CONNECTED';
+}
+
+if (REMINDER_SOURCE === 'api') {
+  if (!REMINDER_API_BASE) {
+    console.warn('[reminders] REMINDER_SOURCE=api but REMINDER_API_BASE is missing; reminders disabled');
+  } else {
+    cron.schedule(
+      REMINDER_CRON,
+      async () => {
+        try {
+          const result = await runDailyTaskRemindersViaApi({
+            client,
+            apiBase: REMINDER_API_BASE,
+            apiKey: REMINDER_API_KEY,
+            normalizeToJid,
+            isWaConnected,
+            tz: REMINDER_TZ,
+            onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
+            sendDelayMs: REMINDER_SEND_DELAY_MS,
+            logger: console,
+          });
+          console.log('[reminders] done', result);
+        } catch (e) {
+          console.error('[reminders] job error', e);
+        }
+      },
+      { timezone: REMINDER_TZ }
+    );
+    console.log(`[reminders] scheduled cron="${REMINDER_CRON}" tz="${REMINDER_TZ}" source=api onlyEnvoyerAuto=${REMINDER_ONLY_ENVOYER_AUTO}`);
+  }
+} else if (dbPool) {
+  cron.schedule(
+    REMINDER_CRON,
+    async () => {
+      try {
+        const result = await runDailyTaskReminders({
+          client,
+          pool: dbPool,
+          normalizeToJid,
+          isWaConnected,
+          tz: REMINDER_TZ,
+          onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
+          sendDelayMs: REMINDER_SEND_DELAY_MS,
+          logger: console,
+        });
+        console.log('[reminders] done', result);
+      } catch (e) {
+        console.error('[reminders] job error', e);
+      }
+    },
+    { timezone: REMINDER_TZ }
+  );
+  console.log(`[reminders] scheduled cron="${REMINDER_CRON}" tz="${REMINDER_TZ}" source=db onlyEnvoyerAuto=${REMINDER_ONLY_ENVOYER_AUTO}`);
+}
+
 // REST endpoints
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
 app.get('/status', async (_req, res) => {
-  // Utilise l'état en cache pour éviter les retours "UNKNOWN" intermittents
   let state = lastState;
   try {
-    // Essayez d'obtenir l'état temps-réel, mais retombez sur le cache en cas d'erreur
-    const realtime = await client.getState();
-    if (realtime) state = realtime;
+    state = await client.getState();
   } catch (e) {
-    // ignore, on garde lastState
+    // ignore if session not available
   }
   res.json({
-    ready: state === 'CONNECTED',
+    ready: isClientReady && state === 'CONNECTED',
     state,
     hasQr: !!lastQr,
     lastReadyAt,
@@ -215,8 +298,9 @@ app.get('/qr', (_req, res) => {
 app.post('/send-text', requireApiKey, async (req, res) => {
   try {
     const { phone, text } = req.body || {};
-    const state = lastState;
-    if (state !== 'CONNECTED') {
+    let state = 'UNKNOWN';
+    try { state = await client.getState(); } catch (_) {}
+    if (!isClientReady || state !== 'CONNECTED') {
       return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
     }
     if (!phone || !text) return res.status(400).json({ ok: false, error: 'phone_and_text_required' });
@@ -233,8 +317,9 @@ app.post('/send-text', requireApiKey, async (req, res) => {
 app.post('/send-template', requireApiKey, async (req, res) => {
   try {
     const { phone, templateKey, params } = req.body || {};
-    const state = lastState;
-    if (state !== 'CONNECTED') {
+    let state = 'UNKNOWN';
+    try { state = await client.getState(); } catch (_) {}
+    if (!isClientReady || state !== 'CONNECTED') {
       return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
     }
     if (!phone || !templateKey) return res.status(400).json({ ok: false, error: 'phone_and_templateKey_required' });
