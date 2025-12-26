@@ -1,11 +1,15 @@
-// Load environment variables from .env
-require('dotenv').config();
+const path = require('path');
+
+// Load environment variables from .env (use absolute path so it works under PM2/systemd)
+const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
+if (dotenvResult?.error) {
+  console.warn('[config] .env not loaded:', dotenvResult.error.message);
+}
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const path = require('path');
 const qrcodeTerminal = require('qrcode-terminal');
 const cron = require('node-cron');
 
