@@ -195,17 +195,30 @@ function normalizeToJid(phone) {
 const REMINDER_TZ = process.env.REMINDER_TZ || 'Africa/Casablanca';
 const REMINDER_AT = process.env.REMINDER_AT || null; // HH:mm (e.g. 08:00)
 
+// Debug: Log environment variables
+console.log('[config] REMINDER_AT from env:', process.env.REMINDER_AT);
+console.log('[config] REMINDER_TZ from env:', process.env.REMINDER_TZ);
+console.log('[config] REMINDER_CRON from env:', process.env.REMINDER_CRON);
+
 function cronFromReminderAt(reminderAt) {
-  if (!reminderAt) return null;
+  if (!reminderAt) {
+    console.log('[config] cronFromReminderAt: reminderAt is empty/null');
+    return null;
+  }
   const m = String(reminderAt).trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
-  if (!m) return null;
+  if (!m) {
+    console.log('[config] cronFromReminderAt: invalid format for', reminderAt);
+    return null;
+  }
   const hour = Number(m[1]);
   const minute = Number(m[2]);
-  // node-cron format: minute hour day-of-month month day-of-week
-  return `${minute} ${hour} * * *`;
+  const cron = `${minute} ${hour} * * *`;
+  console.log('[config] cronFromReminderAt: converted', reminderAt, 'to', cron);
+  return cron;
 }
 
 const REMINDER_CRON = process.env.REMINDER_CRON || cronFromReminderAt(REMINDER_AT) || '0 8 * * *';
+console.log('[config] Final REMINDER_CRON:', REMINDER_CRON);
 const REMINDER_ONLY_ENVOYER_AUTO = (process.env.REMINDER_ONLY_ENVOYER_AUTO || 'true').toLowerCase() !== 'false';
 const REMINDER_SEND_DELAY_MS = process.env.REMINDER_SEND_DELAY_MS ? Number(process.env.REMINDER_SEND_DELAY_MS) : 600;
 const REMINDER_API_BASE = process.env.REMINDER_API_BASE || null; // e.g. https://example.com/api
@@ -354,6 +367,65 @@ app.post('/send-template', requireApiKey, async (req, res) => {
   } catch (e) {
     console.error('send-template error', e);
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
+  }
+});
+
+// Test endpoint to manually trigger reminders
+app.post('/api/send-reminder-test', requireApiKey, async (req, res) => {
+  try {
+    let state = 'UNKNOWN';
+    try { state = await client.getState(); } catch (_) {}
+    if (!isClientReady || state !== 'CONNECTED') {
+      return res.status(503).json({ ok: false, error: 'wa_not_ready', state, message: 'WhatsApp client is not ready. Please scan QR code first.' });
+    }
+
+    console.log('[reminder-test] Manual reminder trigger started...');
+    
+    let result;
+    if (REMINDER_SOURCE === 'api') {
+      if (!REMINDER_API_BASE) {
+        return res.status(500).json({ ok: false, error: 'REMINDER_API_BASE not configured' });
+      }
+      result = await runDailyTaskRemindersViaApi({
+        client,
+        apiBase: REMINDER_API_BASE,
+        apiKey: REMINDER_API_KEY,
+        normalizeToJid,
+        isWaConnected,
+        tz: REMINDER_TZ,
+        onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
+        sendDelayMs: REMINDER_SEND_DELAY_MS,
+        logger: console,
+      });
+    } else if (dbPool) {
+      result = await runDailyTaskReminders({
+        client,
+        pool: dbPool,
+        normalizeToJid,
+        isWaConnected,
+        tz: REMINDER_TZ,
+        onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
+        sendDelayMs: REMINDER_SEND_DELAY_MS,
+        logger: console,
+      });
+    } else {
+      return res.status(500).json({ ok: false, error: 'no_reminder_source_configured' });
+    }
+
+    console.log('[reminder-test] Manual reminder completed:', result);
+    res.json({ 
+      ok: true, 
+      result,
+      config: {
+        source: REMINDER_SOURCE,
+        tz: REMINDER_TZ,
+        cron: REMINDER_CRON,
+        onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO
+      }
+    });
+  } catch (e) {
+    console.error('[reminder-test] Error:', e);
+    res.status(500).json({ ok: false, error: e?.message || 'unknown', stack: e?.stack });
   }
 });
 
