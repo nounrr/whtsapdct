@@ -195,14 +195,17 @@ function normalizeToJid(phone) {
   return `${digits}@c.us`;
 }
 
-// Daily reminders (08:00)
+// Daily reminders
 const REMINDER_TZ = process.env.REMINDER_TZ || 'Africa/Casablanca';
-const REMINDER_AT = process.env.REMINDER_AT || null; // HH:mm (e.g. 08:00)
 
-// Debug: Log environment variables
-console.log('[config] REMINDER_AT from env:', process.env.REMINDER_AT);
+// Manual reminder time (HH:mm, 24h). Example: '15:57'
+// NOTE: This is intentionally NOT read from .env as requested.
+const REMINDER_AT = '15:57';
+
+// Debug: Log effective configuration
+console.log('[config] REMINDER_AT (manual):', REMINDER_AT);
 console.log('[config] REMINDER_TZ from env:', process.env.REMINDER_TZ);
-console.log('[config] REMINDER_CRON from env:', process.env.REMINDER_CRON);
+console.log('[config] REMINDER_CRON from env (optional override):', process.env.REMINDER_CRON);
 
 function cronFromReminderAt(reminderAt) {
   if (!reminderAt) {
