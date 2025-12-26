@@ -303,11 +303,12 @@ app.get('/status', async (_req, res) => {
   try {
     state = await client.getState();
   } catch (e) {
-    // ignore if session not available
+    // keep lastState
   }
   res.json({
-    ready: isClientReady && state === 'CONNECTED',
+    ready: isClientReady && (state === 'CONNECTED' || lastState === 'CONNECTED'),
     state,
+    lastState,
     hasQr: !!lastQr,
     lastReadyAt,
     now: Date.now()
@@ -323,10 +324,11 @@ app.get('/qr', (_req, res) => {
 app.post('/send-text', requireApiKey, async (req, res) => {
   try {
     const { phone, text } = req.body || {};
-    let state = 'UNKNOWN';
+    let state = lastState;
     try { state = await client.getState(); } catch (_) {}
-    if (!isClientReady || state !== 'CONNECTED') {
-      return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
+    const connected = isClientReady && (state === 'CONNECTED' || lastState === 'CONNECTED');
+    if (!connected) {
+      return res.status(503).json({ ok: false, error: 'wa_not_ready', state, lastState, isClientReady });
     }
     if (!phone || !text) return res.status(400).json({ ok: false, error: 'phone_and_text_required' });
     const jid = normalizeToJid(phone);
@@ -342,10 +344,11 @@ app.post('/send-text', requireApiKey, async (req, res) => {
 app.post('/send-template', requireApiKey, async (req, res) => {
   try {
     const { phone, templateKey, params } = req.body || {};
-    let state = 'UNKNOWN';
+    let state = lastState;
     try { state = await client.getState(); } catch (_) {}
-    if (!isClientReady || state !== 'CONNECTED') {
-      return res.status(503).json({ ok: false, error: 'wa_not_ready', state });
+    const connected = isClientReady && (state === 'CONNECTED' || lastState === 'CONNECTED');
+    if (!connected) {
+      return res.status(503).json({ ok: false, error: 'wa_not_ready', state, lastState, isClientReady });
     }
     if (!phone || !templateKey) return res.status(400).json({ ok: false, error: 'phone_and_templateKey_required' });
 
