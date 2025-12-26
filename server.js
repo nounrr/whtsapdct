@@ -200,7 +200,7 @@ const REMINDER_TZ = process.env.REMINDER_TZ || 'Africa/Casablanca';
 
 // Manual reminder time (HH:mm, 24h). Example: '15:57'
 // NOTE: This is intentionally NOT read from .env as requested.
-const REMINDER_AT = '15:57';
+const REMINDER_AT = '14:58';
 
 // Debug: Log effective configuration
 console.log('[config] REMINDER_AT (manual):', REMINDER_AT);
