@@ -144,6 +144,16 @@
       align-items: center;
     }
 
+    .section-title {
+      padding: 14px 20px;
+      background: #f8f9fa;
+      border-top: 2px solid #e0e0e0;
+      border-bottom: 2px solid #e0e0e0;
+      color: #333;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
     .logs-header h2 {
       font-size: 24px;
     }
@@ -324,18 +334,6 @@
     </div>
 
     <div class="stats" id="stats">
-      <div class="stat-card">
-        <div class="stat-value" id="totalLogs">-</div>
-        <div class="stat-label">Total Logs</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="todayLogs">-</div>
-        <div class="stat-label">Logs Aujourd'hui</div>
-      </div>
-      <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-        <div class="stat-value" id="messagesSent" style="color: white;">-</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Reminders Envoyés (Logs)</div>
-      </div>
       <div class="stat-card" style="background: linear-gradient(135deg, #20c997 0%, #17a2b8 100%); color: white;">
         <div class="stat-value" id="allMessagesSent" style="color: white;">-</div>
         <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Messages (WhatsApp)</div>
@@ -345,12 +343,12 @@
         <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Aujourd'hui (WhatsApp)</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" id="successLogs">-</div>
-        <div class="stat-label">Succès (Reminders)</div>
+        <div class="stat-value" id="totalErrors">-</div>
+        <div class="stat-label">Total Erreurs</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" id="errorLogs">-</div>
-        <div class="stat-label">Erreurs (Reminders)</div>
+        <div class="stat-value" id="todayErrors">-</div>
+        <div class="stat-label">Erreurs Aujourd'hui</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="totalChats">-</div>
@@ -377,25 +375,20 @@
         <span>Exclure numéro test (0659595284)</span>
       </label>
 
-      <button onclick="loadLogs(); loadMessages();">Filtrer</button>
+      <button onclick="loadAll()">Filtrer</button>
       <button class="clear" onclick="clearFilters()">Réinitialiser</button>
     </div>
 
     <div class="logs-container">
       <div class="logs-header">
-        <h2>📝 Historique des Logs</h2>
-        <button class="refresh-btn" onclick="loadLogs()">🔄 Actualiser</button>
+        <h2>🗂️ Reminders & Messages</h2>
+        <button class="refresh-btn" onclick="loadAll()">🔄 Actualiser</button>
       </div>
+      <div class="section-title">📝 Reminders (logs)</div>
       <div class="logs-list" id="logsList">
         <div class="loading">Chargement des logs</div>
       </div>
-    </div>
-
-    <div class="logs-container" style="margin-top: 30px;">
-      <div class="logs-header">
-        <h2>📨 Messages Envoyés</h2>
-        <button class="refresh-btn" onclick="loadMessages()">🔄 Actualiser</button>
-      </div>
+      <div class="section-title">📨 Messages envoyés</div>
       <div class="logs-list" id="messagesList">
         <div class="loading">Chargement des messages</div>
       </div>
@@ -405,9 +398,11 @@
   <script>
     const API_BASE = window.location.origin;
 
-    async function loadLogs() {
+    async function loadAll() {
       const logsList = document.getElementById('logsList');
+      const messagesList = document.getElementById('messagesList');
       logsList.innerHTML = '<div class="loading">Chargement des logs</div>';
+      messagesList.innerHTML = '<div class="loading">Chargement des messages</div>';
 
       try {
         const typeFilter = document.getElementById('typeFilter').value;
@@ -420,15 +415,18 @@
         const response = await fetch(url);
         const data = await response.json();
 
-        if (data.ok && data.logs) {
-          displayLogs(data.logs);
+        if (data.ok) {
+          displayLogs(Array.isArray(data.logs) ? data.logs : []);
+          displayMessages(Array.isArray(data.messages) ? data.messages : []);
           updateStats(data.stats);
         } else {
           logsList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des logs</p></div>';
+          messagesList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des messages</p></div>';
         }
       } catch (error) {
         console.error('Erreur:', error);
         logsList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les logs</p></div>';
+        messagesList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les messages</p></div>';
       }
     }
 
@@ -516,13 +514,10 @@
     function updateStats(stats) {
       if (!stats) return;
 
-      document.getElementById('totalLogs').textContent = stats.total || 0;
-      document.getElementById('todayLogs').textContent = stats.today || 0;
-      document.getElementById('messagesSent').textContent = stats.messagesSent || 0;
       document.getElementById('allMessagesSent').textContent = stats.allMessagesSent || 0;
       document.getElementById('allMessagesSentToday').textContent = stats.allMessagesSentToday || 0;
-      document.getElementById('successLogs').textContent = stats.byType?.reminder_success || 0;
-      document.getElementById('errorLogs').textContent = stats.byType?.reminder_error || 0;
+      document.getElementById('totalErrors').textContent = stats.totalErrors || 0;
+      document.getElementById('todayErrors').textContent = stats.todayErrors || 0;
       document.getElementById('totalChats').textContent = stats.totalChats || 0;
     }
 
@@ -571,42 +566,14 @@
       document.getElementById('typeFilter').value = '';
       document.getElementById('dateFilter').value = '';
       document.getElementById('excludeTestNumber').checked = true;
-      loadLogs();
-      loadMessages();
+      loadAll();
     }
 
-    // Charger les logs au démarrage
-    loadLogs();
-    loadMessages();
+    // Charger au démarrage
+    loadAll();
 
     // Auto-refresh toutes les 30 secondes
-    setInterval(() => {
-      loadLogs();
-      loadMessages();
-    }, 30000);
-
-    async function loadMessages() {
-      const messagesList = document.getElementById('messagesList');
-      messagesList.innerHTML = '<div class="loading">Chargement des messages</div>';
-
-      try {
-        const dateFilter = document.getElementById('dateFilter').value;
-        let url = `${API_BASE}/api/logs/messages?limit=100`;
-        if (dateFilter) url += `&date=${dateFilter}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.ok && data.messages) {
-          displayMessages(data.messages);
-        } else {
-          messagesList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des messages</p></div>';
-        }
-      } catch (error) {
-        console.error('Erreur:', error);
-        messagesList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les messages</p></div>';
-      }
-    }
+    setInterval(loadAll, 30000);
 
     function displayMessages(messages) {
       const messagesList = document.getElementById('messagesList');
