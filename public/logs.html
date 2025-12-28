@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logs des Reminders - WhatsApp Service</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      color: #333;
+      font-size: 32px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .header h1::before {
+      content: "📋";
+      font-size: 36px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+
+    .stat-card .stat-value {
+      font-size: 36px;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 5px;
+    }
+
+    .stat-card .stat-label {
+      color: #666;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .filters {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filters label {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .filters select, .filters input {
+      padding: 10px 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    .filters select:focus, .filters input:focus {
+      border-color: #667eea;
+    }
+
+    .filters button {
+      padding: 10px 25px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background 0.3s;
+    }
+
+    .filters button:hover {
+      background: #5568d3;
+    }
+
+    .filters button.clear {
+      background: #dc3545;
+    }
+
+    .filters button.clear:hover {
+      background: #c82333;
+    }
+
+    .logs-container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .logs-header {
+      background: #667eea;
+      color: white;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logs-header h2 {
+      font-size: 24px;
+    }
+
+    .refresh-btn {
+      padding: 10px 20px;
+      background: white;
+      color: #667eea;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.2s;
+    }
+
+    .refresh-btn:hover {
+      transform: scale(1.05);
+    }
+
+    .logs-list {
+      max-height: 600px;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .log-entry {
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 15px;
+      transition: all 0.3s;
+    }
+
+    .log-entry:hover {
+      border-color: #667eea;
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+    }
+
+    .log-entry.reminder_start {
+      border-left: 5px solid #007bff;
+    }
+
+    .log-entry.reminder_success {
+      border-left: 5px solid #28a745;
+    }
+
+    .log-entry.reminder_error {
+      border-left: 5px solid #dc3545;
+    }
+
+    .log-entry.reminder_complete {
+      border-left: 5px solid #6f42c1;
+    }
+
+    .log-entry.reminder_tasks_found {
+      border-left: 5px solid #ffc107;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .log-type {
+      display: inline-block;
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .log-type.reminder_start {
+      background: #cce5ff;
+      color: #004085;
+    }
+
+    .log-type.reminder_success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .log-type.reminder_error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .log-type.reminder_complete {
+      background: #e2d9f3;
+      color: #3c1d62;
+    }
+
+    .log-type.reminder_tasks_found {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .log-timestamp {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .log-content {
+      display: grid;
+      gap: 10px;
+    }
+
+    .log-section {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+    }
+
+    .log-section h4 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .log-section pre {
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #333;
+    }
+
+    .error-message {
+      color: #dc3545;
+      font-weight: 600;
+      padding: 10px;
+      background: #f8d7da;
+      border-radius: 5px;
+      margin-top: 10px;
+    }
+
+    .no-logs {
+      text-align: center;
+      padding: 60px 20px;
+      color: #666;
+    }
+
+    .no-logs .emoji {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #667eea;
+      font-size: 18px;
+    }
+
+    .loading::after {
+      content: '...';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Logs des Reminders</h1>
+      <p style="color: #666; margin-top: 10px;">Suivi en temps réel des rappels de tâches WhatsApp</p>
+    </div>
+
+    <div class="stats" id="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="totalLogs">-</div>
+        <div class="stat-label">Total Logs</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="todayLogs">-</div>
+        <div class="stat-label">Aujourd'hui</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div class="stat-value" id="messagesSent" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Envoyés (Logs)</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #fd7e14 0%, #ff6b6b 100%); color: white;">
+        <div class="stat-value" id="oldMessagesSent" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Anciens Messages (WhatsApp)</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #20c997 0%, #17a2b8 100%); color: white;">
+        <div class="stat-value" id="totalMessagesAllTime" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Messages (WhatsApp)</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white;">
+        <div class="stat-value" id="todayMessagesSent" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Aujourd'hui</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="successLogs">-</div>
+        <div class="stat-label">Succès</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="errorLogs">-</div>
+        <div class="stat-label">Erreurs</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <label for="typeFilter">Type:</label>
+      <select id="typeFilter">
+        <option value="">Tous</option>
+        <option value="reminder_start">Démarrage</option>
+        <option value="reminder_tasks_found">Tâches trouvées</option>
+        <option value="reminder_success">Succès</option>
+        <option value="reminder_error">Erreur</option>
+        <option value="reminder_complete">Complet</option>
+      </select>
+
+      <label for="dateFilter">Date:</label>
+      <input type="date" id="dateFilter">
+
+      <button onclick="loadLogs()">Filtrer</button>
+      <button class="clear" onclick="clearFilters()">Réinitialiser</button>
+    </div>
+
+    <div class="logs-container">
+      <div class="logs-header">
+        <h2>📝 Historique des Logs</h2>
+        <button class="refresh-btn" onclick="loadLogs()">🔄 Actualiser</button>
+      </div>
+      <div class="logs-list" id="logsList">
+        <div class="loading">Chargement des logs</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+
+    async function loadLogs() {
+      const logsList = document.getElementById('logsList');
+      logsList.innerHTML = '<div class="loading">Chargement des logs</div>';
+
+      try {
+        const typeFilter = document.getElementById('typeFilter').value;
+        const dateFilter = document.getElementById('dateFilter').value;
+
+        let url = `${API_BASE}/api/logs?limit=100`;
+        if (typeFilter) url += `&type=${typeFilter}`;
+        if (dateFilter) url += `&date=${dateFilter}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.ok && data.logs) {
+          displayLogs(data.logs);
+          updateStats(data.stats);
+        } else {
+          logsList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des logs</p></div>';
+        }
+      } catch (error) {
+        console.error('Erreur:', error);
+        logsList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les logs</p></div>';
+      }
+    }
+
+    function displayLogs(logs) {
+      const logsList = document.getElementById('logsList');
+
+      if (!logs || logs.length === 0) {
+        logsList.innerHTML = '<div class="no-logs"><div class="emoji">📭</div><p>Aucun log disponible</p></div>';
+        return;
+      }
+
+      logsList.innerHTML = logs.map(log => {
+        const timestamp = new Date(log.timestamp).toLocaleString('fr-FR');
+        const typeClass = log.type || 'info';
+        
+        let content = '';
+        
+        if (log.request) {
+          content += `
+            <div class="log-section">
+              <h4>📤 Requête</h4>
+              <pre>${JSON.stringify(log.request, null, 2)}</pre>
+            </div>
+          `;
+        }
+
+        if (log.response) {
+          content += `
+            <div class="log-section">
+              <h4>📥 Réponse</h4>
+              <pre>${JSON.stringify(log.response, null, 2)}</pre>
+            </div>
+          `;
+        }
+
+        if (log.error) {
+          content += `
+            <div class="error-message">
+              ⚠️ Erreur: ${log.error}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="log-entry ${typeClass}">
+            <div class="log-header">
+              <span class="log-type ${typeClass}">${getTypeLabel(log.type)}</span>
+              <span class="log-timestamp">${timestamp}</span>
+            </div>
+            <div class="log-content">
+              ${content}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateStats(stats) {
+      if (!stats) return;
+
+      document.getElementById('totalLogs').textContent = stats.total || 0;
+      document.getElementById('todayLogs').textContent = stats.today || 0;
+      document.getElementById('messagesSent').textContent = stats.messagesSent || 0;
+      document.getElementById('oldMessagesSent').textContent = stats.oldMessagesSent || 0;
+      document.getElementById('totalMessagesAllTime').textContent = stats.totalMessagesAllTime || stats.messagesSent || 0;
+      document.getElementById('todayMessagesSent').textContent = stats.todayMessagesSent || 0;
+      document.getElementById('successLogs').textContent = stats.byType?.reminder_success || 0;
+      document.getElementById('errorLogs').textContent = stats.byType?.reminder_error || 0;
+    }
+
+    function getTypeLabel(type) {
+      const labels = {
+        'reminder_start': 'Démarrage',
+        'reminder_tasks_found': 'Tâches trouvées',
+        'reminder_success': 'Succès',
+        'reminder_error': 'Erreur',
+        'reminder_complete': 'Complet'
+      };
+      return labels[type] || type;
+    }
+
+    function clearFilters() {
+      document.getElementById('typeFilter').value = '';
+      document.getElementById('dateFilter').value = '';
+      loadLogs();
+    }
+
+    // Charger les logs au démarrage
+    loadLogs();
+
+    // Auto-refresh toutes les 30 secondes
+    setInterval(loadLogs, 30000);
+  </script>
+</body>
+</html>

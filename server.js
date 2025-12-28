@@ -15,6 +15,7 @@ const cron = require('node-cron');
 
 const { createPoolFromEnv } = require('./lib/db');
 const { runDailyTaskReminders, runDailyTaskRemindersViaApi } = require('./reminders/dailyTaskReminders');
+const { getLogs, clearLogs, getLogsStats } = require('./lib/logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -200,7 +201,7 @@ const REMINDER_TZ = process.env.REMINDER_TZ || 'Africa/Casablanca';
 
 // Manual reminder time (HH:mm, 24h). Example: '15:57'
 // NOTE: This is intentionally NOT read from .env as requested.
-const REMINDER_AT = '09:00';
+const REMINDER_AT = '16:00';
 
 // Debug: Log effective configuration
 console.log('[config] REMINDER_AT (manual):', REMINDER_AT);
@@ -376,6 +377,46 @@ app.post('/send-template', requireApiKey, async (req, res) => {
     res.json({ ok: true, id: msg.id?._serialized });
   } catch (e) {
     console.error('send-template error', e);
+    res.status(500).json({ ok: false, error: e?.message || 'unknown' });
+  }
+});
+
+// Endpoints pour les logs
+app.get('/api/logs', async (req, res) => {
+  try {
+    const { limit, type, date } = req.query;
+    const options = {};
+    
+    if (limit) options.limit = parseInt(limit);
+    if (type) options.type = type;
+    if (date) options.date = date;
+
+    const logs = getLogs(options);
+    const stats = await getLogsStats(client);
+
+    res.json({ ok: true, logs, stats });
+  } catch (e) {
+    console.error('[logs] Error:', e);
+    res.status(500).json({ ok: false, error: e?.message || 'unknown' });
+  }
+});
+
+app.get('/api/logs/stats', async (req, res) => {
+  try {
+    const stats = await getLogsStats(client);
+    res.json({ ok: true, stats });
+  } catch (e) {
+    console.error('[logs] Error:', e);
+    res.status(500).json({ ok: false, error: e?.message || 'unknown' });
+  }
+});
+
+app.delete('/api/logs', requireApiKey, (req, res) => {
+  try {
+    const result = clearLogs();
+    res.json({ ok: true, cleared: result });
+  } catch (e) {
+    console.error('[logs] Error:', e);
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
   }
 });

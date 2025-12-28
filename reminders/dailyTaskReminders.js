@@ -1,6 +1,7 @@
 'use strict';
 
 const { DateTime } = require('luxon');
+const { logReminder } = require('../lib/logger');
 
 function getTodayDateString(tz) {
   return DateTime.now().setZone(tz).toISODate(); // YYYY-MM-DD
@@ -116,16 +117,40 @@ async function runDailyTaskReminders({
 }) {
   const today = getTodayDateString(tz);
 
+  // Log début du reminder
+  logReminder({
+    type: 'reminder_start',
+    date: today,
+    request: { source: 'db', tz, onlyEnvoyerAuto }
+  });
+
   if (!isWaConnected()) {
     logger.warn(`[reminders] WA not connected; skip (today=${today})`);
-    return { ok: false, skipped: true, reason: 'wa_not_connected', today };
+    const errorResult = { ok: false, skipped: true, reason: 'wa_not_connected', today };
+    logReminder({
+      type: 'reminder_error',
+      date: today,
+      request: { source: 'db', tz, onlyEnvoyerAuto },
+      response: errorResult,
+      error: 'WhatsApp non connecté'
+    });
+    return errorResult;
   }
 
   const tasks = await fetchTasksToRemind(pool, today, { onlyEnvoyerAuto });
   logger.log(`[reminders] tasks to remind=${tasks.length} (today=${today})`);
 
+  // Log les tâches trouvées
+  logReminder({
+    type: 'reminder_tasks_found',
+    date: today,
+    request: { source: 'db', tz, onlyEnvoyerAuto, tasksCount: tasks.length },
+    response: { tasks: tasks.map(t => ({ id: t.id, tel: t.tel, description: t.description })) }
+  });
+
   let sent = 0;
   let failed = 0;
+  const errors = [];
 
   for (const row of tasks) {
     try {
@@ -133,14 +158,44 @@ async function runDailyTaskReminders({
       const text = makeReminderText(row);
       await client.sendMessage(jid, text);
       sent++;
+      
+      // Log succès d'envoi
+      logReminder({
+        type: 'reminder_success',
+        date: today,
+        request: { taskId: row.id, tel: row.tel, message: text },
+        response: { success: true, jid }
+      });
+      
       if (sendDelayMs) await sleep(sendDelayMs);
     } catch (e) {
       failed++;
-      logger.error(`[reminders] send failed taskId=${row.id} userTel=${row.tel} err=${e?.message || e}`);
+      const errorMsg = e?.message || e;
+      errors.push({ taskId: row.id, tel: row.tel, error: errorMsg });
+      logger.error(`[reminders] send failed taskId=${row.id} userTel=${row.tel} err=${errorMsg}`);
+      
+      // Log erreur d'envoi
+      logReminder({
+        type: 'reminder_error',
+        date: today,
+        request: { taskId: row.id, tel: row.tel },
+        response: { success: false },
+        error: errorMsg
+      });
     }
   }
 
-  return { ok: true, today, total: tasks.length, sent, failed };
+  const result = { ok: true, today, total: tasks.length, sent, failed, errors };
+  
+  // Log complétion
+  logReminder({
+    type: 'reminder_complete',
+    date: today,
+    request: { source: 'db', tz, onlyEnvoyerAuto },
+    response: result
+  });
+
+  return result;
 }
 
 async function runDailyTaskRemindersViaApi({
@@ -156,16 +211,40 @@ async function runDailyTaskRemindersViaApi({
 }) {
   const today = getTodayDateString(tz);
 
+  // Log début du reminder
+  logReminder({
+    type: 'reminder_start',
+    date: today,
+    request: { source: 'api', apiBase, tz, onlyEnvoyerAuto }
+  });
+
   if (!isWaConnected()) {
     logger.warn(`[reminders] WA not connected; skip (today=${today})`);
-    return { ok: false, skipped: true, reason: 'wa_not_connected', today };
+    const errorResult = { ok: false, skipped: true, reason: 'wa_not_connected', today };
+    logReminder({
+      type: 'reminder_error',
+      date: today,
+      request: { source: 'api', apiBase, tz, onlyEnvoyerAuto },
+      response: errorResult,
+      error: 'WhatsApp non connecté'
+    });
+    return errorResult;
   }
 
   const tasks = await fetchTasksToRemindFromApi({ apiBase, apiKey, today, tz, onlyEnvoyerAuto });
   logger.log(`[reminders] tasks to remind=${tasks.length} (today=${today}) [source=api]`);
 
+  // Log les tâches trouvées
+  logReminder({
+    type: 'reminder_tasks_found',
+    date: today,
+    request: { source: 'api', apiBase, tz, onlyEnvoyerAuto, tasksCount: tasks.length },
+    response: { tasks: tasks.map(t => ({ id: t.id, tel: t.tel, description: t.description })) }
+  });
+
   let sent = 0;
   let failed = 0;
+  const errors = [];
 
   for (const row of tasks) {
     try {
@@ -173,14 +252,44 @@ async function runDailyTaskRemindersViaApi({
       const text = makeReminderText(row);
       await client.sendMessage(jid, text);
       sent++;
+      
+      // Log succès d'envoi
+      logReminder({
+        type: 'reminder_success',
+        date: today,
+        request: { taskId: row.id, tel: row.tel, message: text },
+        response: { success: true, jid }
+      });
+      
       if (sendDelayMs) await sleep(sendDelayMs);
     } catch (e) {
       failed++;
-      logger.error(`[reminders] send failed taskId=${row.id} userTel=${row.tel} err=${e?.message || e}`);
+      const errorMsg = e?.message || e;
+      errors.push({ taskId: row.id, tel: row.tel, error: errorMsg });
+      logger.error(`[reminders] send failed taskId=${row.id} userTel=${row.tel} err=${errorMsg}`);
+      
+      // Log erreur d'envoi
+      logReminder({
+        type: 'reminder_error',
+        date: today,
+        request: { taskId: row.id, tel: row.tel },
+        response: { success: false },
+        error: errorMsg
+      });
     }
   }
 
-  return { ok: true, today, total: tasks.length, sent, failed, source: 'api' };
+  const result = { ok: true, today, total: tasks.length, sent, failed, errors, source: 'api' };
+  
+  // Log complétion
+  logReminder({
+    type: 'reminder_complete',
+    date: today,
+    request: { source: 'api', apiBase, tz, onlyEnvoyerAuto },
+    response: result
+  });
+
+  return result;
 }
 
 module.exports = { runDailyTaskReminders, runDailyTaskRemindersViaApi };
