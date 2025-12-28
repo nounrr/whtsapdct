@@ -432,10 +432,24 @@
         let content = '';
         
         if (log.request) {
+          // Extraire et afficher le message si disponible
+          let messagePreview = '';
+          if (log.request.message) {
+            const msg = log.request.message;
+            const preview = msg.length > 200 ? msg.substring(0, 200) + '...' : msg;
+            messagePreview = `
+              <div style="background: #e3f2fd; padding: 12px; border-radius: 5px; margin-top: 10px; border-left: 3px solid #2196f3;">
+                <strong>📨 Message envoyé:</strong><br>
+                <pre style="white-space: pre-wrap; margin-top: 5px; font-size: 12px;">${escapeHtml(preview)}</pre>
+              </div>
+            `;
+          }
+          
           content += `
             <div class="log-section">
               <h4>📤 Requête</h4>
               <pre>${JSON.stringify(log.request, null, 2)}</pre>
+              ${messagePreview}
             </div>
           `;
         }
@@ -482,6 +496,17 @@
       document.getElementById('todayMessagesSent').textContent = stats.todayMessagesSent || 0;
       document.getElementById('successLogs').textContent = stats.byType?.reminder_success || 0;
       document.getElementById('errorLogs').textContent = stats.byType?.reminder_error || 0;
+    }
+
+    function escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return text.replace(/[&<>"']/g, m => map[m]);
     }
 
     function getTypeLabel(type) {
