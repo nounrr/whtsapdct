@@ -429,8 +429,8 @@ app.get('/api/logs', async (req, res) => {
     if (type) options.type = type;
     if (date) options.date = date;
 
-    // Liste des numéros à exclure (par défaut + query param)
-    const defaultExcluded = ['06595955284', '212659595528', '0659595528'];
+    // Liste des numéros à exclure (uniquement via query param)
+    const defaultExcluded = [];
     const excludedNumbers = exclude ? [...defaultExcluded, ...exclude.split(',').map(n => n.trim())] : defaultExcluded;
 
     // Fonction pour normaliser et vérifier si un numéro est exclu

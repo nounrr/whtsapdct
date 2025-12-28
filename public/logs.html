@@ -335,48 +335,45 @@
 
     <div class="stats" id="stats">
       <div class="stat-card" style="background: linear-gradient(135deg, #20c997 0%, #17a2b8 100%); color: white;">
-        <div class="stat-value" id="allMessagesSent" style="color: white;">-</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Messages (WhatsApp)</div>
+        <div class="stat-value" id="totalMessages" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Messages</div>
       </div>
       <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white;">
-        <div class="stat-value" id="allMessagesSentToday" style="color: white;">-</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Aujourd'hui (WhatsApp)</div>
+        <div class="stat-value" id="todayMessages" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Aujourd'hui</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-value" id="totalErrors">-</div>
-        <div class="stat-label">Total Erreurs</div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white;">
+        <div class="stat-value" id="totalErrors" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Erreurs</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-value" id="todayErrors">-</div>
-        <div class="stat-label">Erreurs Aujourd'hui</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="totalChats">-</div>
-        <div class="stat-label">Conversations</div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); color: white;">
+        <div class="stat-value" id="todayErrors" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Erreurs Aujourd'hui</div>
       </div>
     </div>
 
     <div class="filters">
-      <label for="typeFilter">Type:</label>
-      <select id="typeFilter">
-        <option value="">Tous</option>
-        <option value="reminder_start">Démarrage</option>
-        <option value="reminder_tasks_found">Tâches trouvées</option>
-        <option value="reminder_success">Succès</option>
-        <option value="reminder_error">Erreur</option>
-        <option value="reminder_complete">Complet</option>
-      </select>
-
-      <label for="dateFilter">Date:</label>
+      <label for="dateFilter">📅 Date:</label>
       <input type="date" id="dateFilter">
+
+      <label for="telFilter">📱 Numéro:</label>
+      <input type="text" id="telFilter" placeholder="0661888772">
+
+      <label for="limitFilter">🔢 Limite:</label>
+      <select id="limitFilter">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="200">200</option>
+        <option value="500">500</option>
+      </select>
 
       <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
         <input type="checkbox" id="excludeTestNumber" checked>
-        <span>Exclure numéro test (0659595284)</span>
+        <span>Exclure n° test</span>
       </label>
 
-      <button onclick="loadAll()">Filtrer</button>
-      <button class="clear" onclick="clearFilters()">Réinitialiser</button>
+      <button onclick="loadAll()">🔍 Filtrer</button>
+      <button class="clear" onclick="clearFilters()">❌ Réinitialiser</button>
     </div>
 
     <div class="logs-container">
@@ -401,110 +398,62 @@
     async function loadAll() {
       const logsList = document.getElementById('logsList');
       const messagesList = document.getElementById('messagesList');
-      logsList.innerHTML = '<div class="loading">Chargement des logs</div>';
-      messagesList.innerHTML = '<div class="loading">Chargement des messages</div>';
+      logsList.innerHTML = '<div class="loading">Chargement des données...</div>';
+      messagesList.innerHTML = '<div class="loading">Chargement des messages...</div>';
 
       try {
-        const typeFilter = document.getElementById('typeFilter').value;
         const dateFilter = document.getElementById('dateFilter').value;
+        const telFilter = document.getElementById('telFilter').value;
+        const limitFilter = document.getElementById('limitFilter').value;
+        const excludeTest = document.getElementById('excludeTestNumber').checked;
 
-        let url = `${API_BASE}/api/logs?limit=100`;
-        if (typeFilter) url += `&type=${typeFilter}`;
+        let url = `${API_BASE}/api/logs?limit=${limitFilter || 100}`;
         if (dateFilter) url += `&date=${dateFilter}`;
+        if (telFilter) url += `&tel=${telFilter}`;
+        
+        // Ajouter exclusions dynamiques si checkbox cochée
+        if (excludeTest) {
+          url += `&exclude=0659595284,212659595284`;
+        }
 
         const response = await fetch(url);
         const data = await response.json();
 
         if (data.ok) {
-          displayLogs(Array.isArray(data.logs) ? data.logs : []);
+          displayErrors(Array.isArray(data.errors) ? data.errors : []);
           displayMessages(Array.isArray(data.messages) ? data.messages : []);
           updateStats(data.stats);
         } else {
-          logsList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des logs</p></div>';
-          messagesList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des messages</p></div>';
+          logsList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement</p></div>';
+          messagesList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement</p></div>';
         }
       } catch (error) {
         console.error('Erreur:', error);
-        logsList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les logs</p></div>';
+        logsList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les données</p></div>';
         messagesList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les messages</p></div>';
       }
     }
 
-    function displayLogs(logs) {
+    function displayErrors(errors) {
       const logsList = document.getElementById('logsList');
-      const excludeTest = document.getElementById('excludeTestNumber').checked;
-
-      // Filtrer les logs liés au numéro test si la checkbox est cochée
-      let filteredLogs = logs;
-      if (excludeTest) {
-        filteredLogs = logs.filter(log => {
-          // Si le log a un numéro de téléphone dans la requête, vérifier
-          if (log.request && log.request.tel) {
-            return !isTestNumber(log.request.tel);
-          }
-          return true; // Garder les logs sans numéro
-        });
-      }
-
-      if (!filteredLogs || filteredLogs.length === 0) {
-        logsList.innerHTML = '<div class="no-logs"><div class="emoji">📫</div><p>Aucun log disponible</p></div>';
+      
+      if (!errors || errors.length === 0) {
+        logsList.innerHTML = '<div class="no-logs"><div class="emoji">✅</div><p>Aucune erreur</p></div>';
         return;
       }
 
-      logsList.innerHTML = filteredLogs.map(log => {
+      logsList.innerHTML = errors.map(log => {
         const timestamp = new Date(log.timestamp).toLocaleString('fr-FR');
-        const typeClass = log.type || 'info';
         
-        let content = '';
-        
-        if (log.request) {
-          // Extraire et afficher le message si disponible
-          let messagePreview = '';
-          if (log.request.message) {
-            const msg = log.request.message;
-            const preview = msg.length > 200 ? msg.substring(0, 200) + '...' : msg;
-            messagePreview = `
-              <div style="background: #e3f2fd; padding: 12px; border-radius: 5px; margin-top: 10px; border-left: 3px solid #2196f3;">
-                <strong>📨 Message envoyé:</strong><br>
-                <pre style="white-space: pre-wrap; margin-top: 5px; font-size: 12px;">${escapeHtml(preview)}</pre>
-              </div>
-            `;
-          }
-          
-          content += `
-            <div class="log-section">
-              <h4>📤 Requête</h4>
-              <pre>${JSON.stringify(log.request, null, 2)}</pre>
-              ${messagePreview}
-            </div>
-          `;
-        }
-
-        if (log.response) {
-          content += `
-            <div class="log-section">
-              <h4>📥 Réponse</h4>
-              <pre>${JSON.stringify(log.response, null, 2)}</pre>
-            </div>
-          `;
-        }
-
-        if (log.error) {
-          content += `
-            <div class="error-message">
-              ⚠️ Erreur: ${log.error}
-            </div>
-          `;
-        }
-
         return `
-          <div class="log-entry ${typeClass}">
+          <div class="log-entry error">
             <div class="log-header">
-              <span class="log-type ${typeClass}">${getTypeLabel(log.type)}</span>
+              <span class="log-type error">❌ Erreur</span>
               <span class="log-timestamp">${timestamp}</span>
             </div>
             <div class="log-content">
-              ${content}
+              ${log.request ? `<div class="log-section"><h4>📤 Requête</h4><pre>${JSON.stringify(log.request, null, 2)}</pre></div>` : ''}
+              ${log.error ? `<div class="error-message">⚠️ ${log.error}</div>` : ''}
             </div>
           </div>
         `;
@@ -514,11 +463,10 @@
     function updateStats(stats) {
       if (!stats) return;
 
-      document.getElementById('allMessagesSent').textContent = stats.allMessagesSent || 0;
-      document.getElementById('allMessagesSentToday').textContent = stats.allMessagesSentToday || 0;
+      document.getElementById('totalMessages').textContent = stats.totalMessages || 0;
+      document.getElementById('todayMessages').textContent = stats.todayMessages || 0;
       document.getElementById('totalErrors').textContent = stats.totalErrors || 0;
       document.getElementById('todayErrors').textContent = stats.todayErrors || 0;
-      document.getElementById('totalChats').textContent = stats.totalChats || 0;
     }
 
     function escapeHtml(text) {
@@ -563,8 +511,9 @@
     }
 
     function clearFilters() {
-      document.getElementById('typeFilter').value = '';
       document.getElementById('dateFilter').value = '';
+      document.getElementById('telFilter').value = '';
+      document.getElementById('limitFilter').value = '100';
       document.getElementById('excludeTestNumber').checked = true;
       loadAll();
     }
@@ -577,43 +526,97 @@
 
     function displayMessages(messages) {
       const messagesList = document.getElementById('messagesList');
-      const excludeTest = document.getElementById('excludeTestNumber').checked;
 
-      // Filtrer les messages si la checkbox est cochée
-      let filteredMessages = messages;
-      if (excludeTest) {
-        filteredMessages = messages.filter(msg => !isTestNumber(msg.tel));
-      }
-
-      if (!filteredMessages || filteredMessages.length === 0) {
+      if (!messages || messages.length === 0) {
         messagesList.innerHTML = '<div class="no-logs"><div class="emoji">📬</div><p>Aucun message envoyé</p></div>';
         return;
       }
 
-      messagesList.innerHTML = filteredMessages.map(msg => {
-        const messagePreview = msg.message.length > 300 ? msg.message.substring(0, 300) + '...' : msg.message;
-        
-        return `
-          <div class="log-entry reminder_success">
-            <div class="log-header">
-              <span class="log-type reminder_success">📨 Message Envoyé</span>
-              <span class="log-timestamp">${msg.date}</span>
-            </div>
-            <div class="log-content">
-              <div class="log-section">
-                <h4>📞 Destinataire</h4>
-                <pre>Téléphone: ${msg.tel}
-JID WhatsApp: ${msg.jid || 'N/A'}
-Tâche ID: ${msg.taskId || 'N/A'}</pre>
-              </div>
-              <div class="log-section" style="background: #e3f2fd; border-left: 3px solid #2196f3;">
-                <h4>📨 Contenu du Message</h4>
-                <pre style="white-space: pre-wrap; line-height: 1.6;">${escapeHtml(messagePreview)}</pre>
-              </div>
-            </div>
+      // Affichage compact des messages
+      messagesList.innerHTML = `
+        <div style="padding: 15px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+              <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                <th style="padding: 10px; text-align: left;">📅 Date</th>
+                <th style="padding: 10px; text-align: left;">📞 Téléphone</th>
+                <th style="padding: 10px; text-align: left;">📝 Message (aperçu)</th>
+                <th style="padding: 10px; text-align: center;">🔍</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${messages.map((msg, index) => {
+                const messagePreview = msg.message.length > 80 ? msg.message.substring(0, 80) + '...' : msg.message;
+                const firstLine = msg.message.split('\\n')[0];
+                
+                return `
+                  <tr style="border-bottom: 1px solid #e9ecef; transition: background 0.2s;" 
+                      onmouseover="this.style.background='#f8f9fa'" 
+                      onmouseout="this.style.background='white'">
+                    <td style="padding: 8px; white-space: nowrap;">${msg.date}</td>
+                    <td style="padding: 8px; font-family: monospace;">${msg.tel}</td>
+                    <td style="padding: 8px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      ${escapeHtml(firstLine)}
+                    </td>
+                    <td style="padding: 8px; text-align: center;">
+                      <button onclick="showMessageDetail(${index})" 
+                              style="background: #667eea; color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 12px;">
+                        Voir
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      
+      // Stocker les messages pour l'affichage détaillé
+      window.currentMessages = messages;
+    }
+
+    function showMessageDetail(index) {
+      const msg = window.currentMessages[index];
+      if (!msg) return;
+      
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7); z-index: 9999;
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+      `;
+      
+      modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto; box-shadow: 0 10px 50px rgba(0,0,0,0.3);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin: 0; color: #333;">📨 Détails du Message</h2>
+            <button onclick="this.parentElement.parentElement.parentElement.remove()" 
+                    style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 14px;">
+              ✕ Fermer
+            </button>
           </div>
-        `;
-      }).join('');
+          
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+            <p style="margin: 5px 0;"><strong>📅 Date:</strong> ${msg.date}</p>
+            <p style="margin: 5px 0;"><strong>📞 Téléphone:</strong> ${msg.tel}</p>
+            <p style="margin: 5px 0;"><strong>🆔 JID:</strong> ${msg.jid || 'N/A'}</p>
+            ${msg.taskId ? `<p style="margin: 5px 0;"><strong>📋 Tâche ID:</strong> ${msg.taskId}</p>` : ''}
+          </div>
+          
+          <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3;">
+            <h3 style="margin: 0 0 10px 0; color: #1976d2;">💬 Message Complet:</h3>
+            <pre style="white-space: pre-wrap; line-height: 1.6; font-family: 'Segoe UI', sans-serif; margin: 0;">${escapeHtml(msg.message)}</pre>
+          </div>
+        </div>
+      `;
+      
+      modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+      };
+      
+      document.body.appendChild(modal);
     }
   </script>
 </body>
