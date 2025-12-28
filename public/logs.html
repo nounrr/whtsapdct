@@ -330,31 +330,31 @@
       </div>
       <div class="stat-card">
         <div class="stat-value" id="todayLogs">-</div>
-        <div class="stat-label">Aujourd'hui</div>
+        <div class="stat-label">Logs Aujourd'hui</div>
       </div>
       <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
         <div class="stat-value" id="messagesSent" style="color: white;">-</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Envoyés (Logs)</div>
-      </div>
-      <div class="stat-card" style="background: linear-gradient(135deg, #fd7e14 0%, #ff6b6b 100%); color: white;">
-        <div class="stat-value" id="oldMessagesSent" style="color: white;">-</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Anciens Messages (WhatsApp)</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Reminders Envoyés (Logs)</div>
       </div>
       <div class="stat-card" style="background: linear-gradient(135deg, #20c997 0%, #17a2b8 100%); color: white;">
-        <div class="stat-value" id="totalMessagesAllTime" style="color: white;">-</div>
+        <div class="stat-value" id="allMessagesSent" style="color: white;">-</div>
         <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Messages (WhatsApp)</div>
       </div>
       <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white;">
-        <div class="stat-value" id="todayMessagesSent" style="color: white;">-</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Aujourd'hui</div>
+        <div class="stat-value" id="allMessagesSentToday" style="color: white;">-</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Messages Aujourd'hui (WhatsApp)</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="successLogs">-</div>
-        <div class="stat-label">Succès</div>
+        <div class="stat-label">Succès (Reminders)</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" id="errorLogs">-</div>
-        <div class="stat-label">Erreurs</div>
+        <div class="stat-label">Erreurs (Reminders)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="totalChats">-</div>
+        <div class="stat-label">Conversations</div>
       </div>
     </div>
 
@@ -372,7 +372,12 @@
       <label for="dateFilter">Date:</label>
       <input type="date" id="dateFilter">
 
-      <button onclick="loadLogs()">Filtrer</button>
+      <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+        <input type="checkbox" id="excludeTestNumber" checked>
+        <span>Exclure numéro test (0659595284)</span>
+      </label>
+
+      <button onclick="loadLogs(); loadMessages();">Filtrer</button>
       <button class="clear" onclick="clearFilters()">Réinitialiser</button>
     </div>
 
@@ -383,6 +388,16 @@
       </div>
       <div class="logs-list" id="logsList">
         <div class="loading">Chargement des logs</div>
+      </div>
+    </div>
+
+    <div class="logs-container" style="margin-top: 30px;">
+      <div class="logs-header">
+        <h2>📨 Messages Envoyés</h2>
+        <button class="refresh-btn" onclick="loadMessages()">🔄 Actualiser</button>
+      </div>
+      <div class="logs-list" id="messagesList">
+        <div class="loading">Chargement des messages</div>
       </div>
     </div>
   </div>
@@ -419,13 +434,26 @@
 
     function displayLogs(logs) {
       const logsList = document.getElementById('logsList');
+      const excludeTest = document.getElementById('excludeTestNumber').checked;
 
-      if (!logs || logs.length === 0) {
-        logsList.innerHTML = '<div class="no-logs"><div class="emoji">📭</div><p>Aucun log disponible</p></div>';
+      // Filtrer les logs liés au numéro test si la checkbox est cochée
+      let filteredLogs = logs;
+      if (excludeTest) {
+        filteredLogs = logs.filter(log => {
+          // Si le log a un numéro de téléphone dans la requête, vérifier
+          if (log.request && log.request.tel) {
+            return !isTestNumber(log.request.tel);
+          }
+          return true; // Garder les logs sans numéro
+        });
+      }
+
+      if (!filteredLogs || filteredLogs.length === 0) {
+        logsList.innerHTML = '<div class="no-logs"><div class="emoji">📫</div><p>Aucun log disponible</p></div>';
         return;
       }
 
-      logsList.innerHTML = logs.map(log => {
+      logsList.innerHTML = filteredLogs.map(log => {
         const timestamp = new Date(log.timestamp).toLocaleString('fr-FR');
         const typeClass = log.type || 'info';
         
@@ -491,11 +519,11 @@
       document.getElementById('totalLogs').textContent = stats.total || 0;
       document.getElementById('todayLogs').textContent = stats.today || 0;
       document.getElementById('messagesSent').textContent = stats.messagesSent || 0;
-      document.getElementById('oldMessagesSent').textContent = stats.oldMessagesSent || 0;
-      document.getElementById('totalMessagesAllTime').textContent = stats.totalMessagesAllTime || stats.messagesSent || 0;
-      document.getElementById('todayMessagesSent').textContent = stats.todayMessagesSent || 0;
+      document.getElementById('allMessagesSent').textContent = stats.allMessagesSent || 0;
+      document.getElementById('allMessagesSentToday').textContent = stats.allMessagesSentToday || 0;
       document.getElementById('successLogs').textContent = stats.byType?.reminder_success || 0;
       document.getElementById('errorLogs').textContent = stats.byType?.reminder_error || 0;
+      document.getElementById('totalChats').textContent = stats.totalChats || 0;
     }
 
     function escapeHtml(text) {
@@ -507,6 +535,25 @@
         "'": '&#039;'
       };
       return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function normalizePhoneNumber(phone) {
+      if (!phone) return '';
+      // Enlever tous les caractères non numériques
+      let digits = phone.toString().replace(/\D+/g, '');
+      
+      // Si commence par 0, convertir en format international (212)
+      if (digits.startsWith('0') && digits.length === 10) {
+        digits = '212' + digits.substring(1);
+      }
+      
+      return digits;
+    }
+
+    function isTestNumber(phone) {
+      const testNumbers = ['0659595284', '212659595284', '659595284'];
+      const normalized = normalizePhoneNumber(phone);
+      return testNumbers.some(test => normalizePhoneNumber(test) === normalized);
     }
 
     function getTypeLabel(type) {
@@ -523,14 +570,84 @@
     function clearFilters() {
       document.getElementById('typeFilter').value = '';
       document.getElementById('dateFilter').value = '';
+      document.getElementById('excludeTestNumber').checked = true;
       loadLogs();
+      loadMessages();
     }
 
     // Charger les logs au démarrage
     loadLogs();
+    loadMessages();
 
     // Auto-refresh toutes les 30 secondes
-    setInterval(loadLogs, 30000);
+    setInterval(() => {
+      loadLogs();
+      loadMessages();
+    }, 30000);
+
+    async function loadMessages() {
+      const messagesList = document.getElementById('messagesList');
+      messagesList.innerHTML = '<div class="loading">Chargement des messages</div>';
+
+      try {
+        const dateFilter = document.getElementById('dateFilter').value;
+        let url = `${API_BASE}/api/logs/messages?limit=100`;
+        if (dateFilter) url += `&date=${dateFilter}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.ok && data.messages) {
+          displayMessages(data.messages);
+        } else {
+          messagesList.innerHTML = '<div class="no-logs"><div class="emoji">⚠️</div><p>Erreur de chargement des messages</p></div>';
+        }
+      } catch (error) {
+        console.error('Erreur:', error);
+        messagesList.innerHTML = '<div class="no-logs"><div class="emoji">❌</div><p>Impossible de charger les messages</p></div>';
+      }
+    }
+
+    function displayMessages(messages) {
+      const messagesList = document.getElementById('messagesList');
+      const excludeTest = document.getElementById('excludeTestNumber').checked;
+
+      // Filtrer les messages si la checkbox est cochée
+      let filteredMessages = messages;
+      if (excludeTest) {
+        filteredMessages = messages.filter(msg => !isTestNumber(msg.tel));
+      }
+
+      if (!filteredMessages || filteredMessages.length === 0) {
+        messagesList.innerHTML = '<div class="no-logs"><div class="emoji">📬</div><p>Aucun message envoyé</p></div>';
+        return;
+      }
+
+      messagesList.innerHTML = filteredMessages.map(msg => {
+        const messagePreview = msg.message.length > 300 ? msg.message.substring(0, 300) + '...' : msg.message;
+        
+        return `
+          <div class="log-entry reminder_success">
+            <div class="log-header">
+              <span class="log-type reminder_success">📨 Message Envoyé</span>
+              <span class="log-timestamp">${msg.date}</span>
+            </div>
+            <div class="log-content">
+              <div class="log-section">
+                <h4>📞 Destinataire</h4>
+                <pre>Téléphone: ${msg.tel}
+JID WhatsApp: ${msg.jid || 'N/A'}
+Tâche ID: ${msg.taskId || 'N/A'}</pre>
+              </div>
+              <div class="log-section" style="background: #e3f2fd; border-left: 3px solid #2196f3;">
+                <h4>📨 Contenu du Message</h4>
+                <pre style="white-space: pre-wrap; line-height: 1.6;">${escapeHtml(messagePreview)}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
   </script>
 </body>
 </html>

@@ -15,7 +15,7 @@ const cron = require('node-cron');
 
 const { createPoolFromEnv } = require('./lib/db');
 const { runDailyTaskReminders, runDailyTaskRemindersViaApi } = require('./reminders/dailyTaskReminders');
-const { getLogs, clearLogs, getLogsStats } = require('./lib/logger');
+const { getLogs, getSentMessages, clearLogs, getLogsStats } = require('./lib/logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -395,6 +395,23 @@ app.get('/api/logs', async (req, res) => {
     const stats = await getLogsStats(client);
 
     res.json({ ok: true, logs, stats });
+  } catch (e) {
+    console.error('[logs] Error:', e);
+    res.status(500).json({ ok: false, error: e?.message || 'unknown' });
+  }
+});
+
+app.get('/api/logs/messages', async (req, res) => {
+  try {
+    const { limit, date } = req.query;
+    const options = {};
+    
+    if (limit) options.limit = parseInt(limit);
+    if (date) options.date = date;
+
+    const messages = getSentMessages(options);
+
+    res.json({ ok: true, messages, total: messages.length });
   } catch (e) {
     console.error('[logs] Error:', e);
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
