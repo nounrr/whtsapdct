@@ -422,40 +422,79 @@ app.post('/send-template', requireApiKey, async (req, res) => {
 // Endpoints pour les logs (nouveaux messages JSON uniquement)
 app.get('/api/logs', async (req, res) => {
   try {
-    const { limit, type, date } = req.query;
+    const { limit, type, date, tel, exclude } = req.query;
     const options = {};
     
     if (limit) options.limit = parseInt(limit);
     if (type) options.type = type;
     if (date) options.date = date;
 
-    // Récupérer tous les logs pour les statistiques
+    // Liste des numéros à exclure (par défaut + query param)
+    const defaultExcluded = ['06595955284', '212659595528', '0659595528'];
+    const excludedNumbers = exclude ? [...defaultExcluded, ...exclude.split(',').map(n => n.trim())] : defaultExcluded;
+
+    // Fonction pour normaliser et vérifier si un numéro est exclu
+    const isExcluded = (phone) => {
+      const normalized = normalizeDigits(phone);
+      return excludedNumbers.some(ex => {
+        const exNorm = normalizeDigits(ex);
+        return normalized === exNorm || normalized.endsWith(exNorm) || exNorm.endsWith(normalized);
+      });
+    };
+
+    // Récupérer tous les logs pour les erreurs
     const allLogs = getLogs({ date: options.date });
     
-    // Séparer les erreurs et les succès
-    const errors = allLogs.filter(log => log.type === 'reminder_error' || log.type === 'error');
-    const messages = getSentMessages({ limit: options.limit || 100, date: options.date });
+    // Séparer les erreurs et les succès, puis filtrer
+    let errors = allLogs.filter(log => log.type === 'reminder_error' || log.type === 'error');
+    let messages = getSentMessages({ limit: options.limit || 1000, date: options.date });
 
-    // Calculer les statistiques
+    // Filtrer par numéro de téléphone si spécifié
+    if (tel) {
+      const telNorm = normalizeDigits(tel);
+      messages = messages.filter(msg => {
+        const msgTel = normalizeDigits(msg.tel || '');
+        return msgTel.includes(telNorm) || telNorm.includes(msgTel);
+      });
+      errors = errors.filter(err => {
+        const errTel = normalizeDigits(err.request?.tel || '');
+        return errTel.includes(telNorm) || telNorm.includes(errTel);
+      });
+    }
+
+    // Exclure les numéros de la liste d'exclusion
+    messages = messages.filter(msg => !isExcluded(msg.tel));
+    errors = errors.filter(err => !isExcluded(err.request?.tel));
+
+    // Calculer les statistiques (uniquement messages et erreurs, après filtres)
     const today = new Date().toISOString().split('T')[0];
-    const todayLogs = allLogs.filter(log => log.timestamp && log.timestamp.startsWith(today));
     const todayMessages = messages.filter(msg => msg.timestamp && msg.timestamp.startsWith(today));
     const todayErrors = errors.filter(err => err.timestamp && err.timestamp.startsWith(today));
 
     const stats = {
-      total: allLogs.length,
       totalMessages: messages.length,
       totalErrors: errors.length,
-      today: todayLogs.length,
       todayMessages: todayMessages.length,
-      todayErrors: todayErrors.length
+      todayErrors: todayErrors.length,
+      total: messages.length + errors.length,
+      today: todayMessages.length + todayErrors.length
     };
+
+    // Limiter les résultats après calcul des stats
+    const limitedMessages = limit ? messages.slice(0, parseInt(limit)) : messages.slice(0, 100);
+    const limitedErrors = errors.slice(0, 20);
 
     res.json({ 
       ok: true, 
-      errors: type === 'error' || type === 'reminder_error' ? errors : errors.slice(-20), // Limiter les erreurs à 20 par défaut
-      messages, 
-      stats 
+      errors: limitedErrors,
+      messages: limitedMessages, 
+      stats,
+      filters: {
+        date: date || null,
+        tel: tel || null,
+        excluded: excludedNumbers,
+        limit: limit || 100
+      }
     });
   } catch (e) {
     console.error('[logs] Error:', e);
