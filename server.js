@@ -15,7 +15,7 @@ const cron = require('node-cron');
 
 const { createPoolFromEnv } = require('./lib/db');
 const { runDailyTaskReminders, runDailyTaskRemindersViaApi } = require('./reminders/dailyTaskReminders');
-const { getLogs, getSentMessages, clearLogs } = require('./lib/logger');
+const { getLogs, getSentMessages, clearLogs, logReminder } = require('./lib/logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -334,9 +334,28 @@ app.post('/send-text', requireApiKey, async (req, res) => {
     if (!phone || !text) return res.status(400).json({ ok: false, error: 'phone_and_text_required' });
     const jid = normalizeToJid(phone);
     const msg = await client.sendMessage(jid, text);
+    
+    // Logger le message envoyé
+    logReminder({
+      type: 'reminder_success',
+      date: new Date().toISOString().split('T')[0],
+      request: { tel: phone, message: text, source: 'manual_api', endpoint: '/send-text' },
+      response: { success: true, jid, messageId: msg.id?._serialized }
+    });
+    
     res.json({ ok: true, id: msg.id?._serialized });
   } catch (e) {
     console.error('send-text error', e);
+    
+    // Logger l'erreur
+    logReminder({
+      type: 'reminder_error',
+      date: new Date().toISOString().split('T')[0],
+      request: { tel: req.body?.phone, message: req.body?.text, source: 'manual_api', endpoint: '/send-text' },
+      response: { success: false },
+      error: e?.message || 'unknown'
+    });
+    
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
   }
 });
@@ -374,9 +393,28 @@ app.post('/send-template', requireApiKey, async (req, res) => {
 
     const jid = normalizeToJid(phone);
     const msg = await client.sendMessage(jid, text);
+    
+    // Logger le message envoyé
+    logReminder({
+      type: 'reminder_success',
+      date: new Date().toISOString().split('T')[0],
+      request: { tel: phone, message: text, source: 'manual_api', endpoint: '/send-template', templateKey },
+      response: { success: true, jid, messageId: msg.id?._serialized }
+    });
+    
     res.json({ ok: true, id: msg.id?._serialized });
   } catch (e) {
     console.error('send-template error', e);
+    
+    // Logger l'erreur
+    logReminder({
+      type: 'reminder_error',
+      date: new Date().toISOString().split('T')[0],
+      request: { tel: req.body?.phone, source: 'manual_api', endpoint: '/send-template', templateKey: req.body?.templateKey },
+      response: { success: false },
+      error: e?.message || 'unknown'
+    });
+    
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
   }
 });
@@ -391,10 +429,34 @@ app.get('/api/logs', async (req, res) => {
     if (type) options.type = type;
     if (date) options.date = date;
 
-    const logs = getLogs(options);
+    // Récupérer tous les logs pour les statistiques
+    const allLogs = getLogs({ date: options.date });
+    
+    // Séparer les erreurs et les succès
+    const errors = allLogs.filter(log => log.type === 'reminder_error' || log.type === 'error');
     const messages = getSentMessages({ limit: options.limit || 100, date: options.date });
 
-    res.json({ ok: true, logs, messages, total: logs.length });
+    // Calculer les statistiques
+    const today = new Date().toISOString().split('T')[0];
+    const todayLogs = allLogs.filter(log => log.timestamp && log.timestamp.startsWith(today));
+    const todayMessages = messages.filter(msg => msg.timestamp && msg.timestamp.startsWith(today));
+    const todayErrors = errors.filter(err => err.timestamp && err.timestamp.startsWith(today));
+
+    const stats = {
+      total: allLogs.length,
+      totalMessages: messages.length,
+      totalErrors: errors.length,
+      today: todayLogs.length,
+      todayMessages: todayMessages.length,
+      todayErrors: todayErrors.length
+    };
+
+    res.json({ 
+      ok: true, 
+      errors: type === 'error' || type === 'reminder_error' ? errors : errors.slice(-20), // Limiter les erreurs à 20 par défaut
+      messages, 
+      stats 
+    });
   } catch (e) {
     console.error('[logs] Error:', e);
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
