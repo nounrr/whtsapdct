@@ -15,7 +15,7 @@ const cron = require('node-cron');
 
 const { createPoolFromEnv } = require('./lib/db');
 const { runDailyTaskReminders, runDailyTaskRemindersViaApi } = require('./reminders/dailyTaskReminders');
-const { getLogs, getSentMessages, clearLogs, getLogsStats, backfillOldRemindersFromWhatsApp } = require('./lib/logger');
+const { getLogs, getSentMessages, clearLogs } = require('./lib/logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -381,7 +381,7 @@ app.post('/send-template', requireApiKey, async (req, res) => {
   }
 });
 
-// Endpoints pour les logs
+// Endpoints pour les logs (nouveaux messages JSON uniquement)
 app.get('/api/logs', async (req, res) => {
   try {
     const { limit, type, date } = req.query;
@@ -392,18 +392,9 @@ app.get('/api/logs', async (req, res) => {
     if (date) options.date = date;
 
     const logs = getLogs(options);
-    const statsFull = await getLogsStats(client);
     const messages = getSentMessages({ limit: options.limit || 100, date: options.date });
 
-    const stats = {
-      totalErrors: statsFull?.totalErrors || 0,
-      todayErrors: statsFull?.todayErrors || 0,
-      allMessagesSent: statsFull?.allMessagesSent || 0,
-      allMessagesSentToday: statsFull?.allMessagesSentToday || 0,
-      totalChats: statsFull?.totalChats || 0,
-    };
-
-    res.json({ ok: true, logs, messages, stats });
+    res.json({ ok: true, logs, messages, total: logs.length });
   } catch (e) {
     console.error('[logs] Error:', e);
     res.status(500).json({ ok: false, error: e?.message || 'unknown' });
@@ -427,46 +418,13 @@ app.get('/api/logs/messages', async (req, res) => {
   }
 });
 
-app.get('/api/logs/stats', async (req, res) => {
-  try {
-    const statsFull = await getLogsStats(client);
-    const stats = {
-      totalErrors: statsFull?.totalErrors || 0,
-      todayErrors: statsFull?.todayErrors || 0,
-      allMessagesSent: statsFull?.allMessagesSent || 0,
-      allMessagesSentToday: statsFull?.allMessagesSentToday || 0,
-      totalChats: statsFull?.totalChats || 0,
-    };
-    res.json({ ok: true, stats });
-  } catch (e) {
-    console.error('[logs] Error:', e);
-    res.status(500).json({ ok: false, error: e?.message || 'unknown' });
-  }
-});
+// Endpoint statistiques désactivé - travail uniquement avec nouveaux messages JSON
+// app.get('/api/logs/stats', ...);
 
-// Backfill old reminders from WhatsApp into logs/reminders.json
-// Protected (x-api-key) because it reads message history and writes logs.
-app.post('/api/logs/backfill-reminders', requireApiKey, async (req, res) => {
-  try {
-    const sinceDays = req.query.sinceDays ? Number(req.query.sinceDays) : 30;
-    const limitPerChat = req.query.limitPerChat ? Number(req.query.limitPerChat) : 1000;
-    const maxChats = req.query.maxChats ? Number(req.query.maxChats) : 300;
-
-    const result = await backfillOldRemindersFromWhatsApp({
-      client,
-      tz: process.env.REMINDER_TZ || 'Africa/Casablanca',
-      sinceDays,
-      limitPerChat,
-      maxChats,
-      logger: console,
-    });
-
-    res.json({ ok: true, result });
-  } catch (e) {
-    console.error('[backfill] Error:', e);
-    res.status(500).json({ ok: false, error: e?.message || 'unknown' });
-  }
-});
+// Endpoint backfill désactivé - travail uniquement avec JSON
+// app.post('/api/logs/backfill-reminders', requireApiKey, async (req, res) => {
+//   res.status(410).json({ ok: false, error: 'endpoint_disabled', message: 'Backfill désactivé - travail uniquement avec JSON' });
+// });
 
 app.delete('/api/logs', requireApiKey, (req, res) => {
   try {
