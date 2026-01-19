@@ -112,6 +112,7 @@ async function runDailyTaskReminders({
   isWaConnected,
   tz,
   onlyEnvoyerAuto,
+  sendMessage,
   sendDelayMs,
   logger = console,
 }) {
@@ -156,7 +157,11 @@ async function runDailyTaskReminders({
     try {
       const jid = normalizeToJid(row.tel);
       const text = makeReminderText(row);
-      await client.sendMessage(jid, text);
+      if (typeof sendMessage === 'function') {
+        await sendMessage(jid, text, { source: 'db', taskId: row.id, tel: row.tel, today });
+      } else {
+        await client.sendMessage(jid, text);
+      }
       sent++;
       
       // Log succès d'envoi
@@ -167,7 +172,8 @@ async function runDailyTaskReminders({
         response: { success: true, jid }
       });
       
-      if (sendDelayMs) await sleep(sendDelayMs);
+      // If a queue-based sender is injected, it already handles pacing.
+      if (sendDelayMs && typeof sendMessage !== 'function') await sleep(sendDelayMs);
     } catch (e) {
       failed++;
       const errorMsg = e?.message || e;
@@ -206,6 +212,7 @@ async function runDailyTaskRemindersViaApi({
   isWaConnected,
   tz,
   onlyEnvoyerAuto,
+  sendMessage,
   sendDelayMs,
   logger = console,
 }) {
@@ -250,7 +257,11 @@ async function runDailyTaskRemindersViaApi({
     try {
       const jid = normalizeToJid(row.tel);
       const text = makeReminderText(row);
-      await client.sendMessage(jid, text);
+      if (typeof sendMessage === 'function') {
+        await sendMessage(jid, text, { source: 'api', taskId: row.id, tel: row.tel, today, apiBase });
+      } else {
+        await client.sendMessage(jid, text);
+      }
       sent++;
       
       // Log succès d'envoi
@@ -261,7 +272,8 @@ async function runDailyTaskRemindersViaApi({
         response: { success: true, jid }
       });
       
-      if (sendDelayMs) await sleep(sendDelayMs);
+      // If a queue-based sender is injected, it already handles pacing.
+      if (sendDelayMs && typeof sendMessage !== 'function') await sleep(sendDelayMs);
     } catch (e) {
       failed++;
       const errorMsg = e?.message || e;

@@ -16,6 +16,7 @@ const cron = require('node-cron');
 const { createPoolFromEnv } = require('./lib/db');
 const { runDailyTaskReminders, runDailyTaskRemindersViaApi } = require('./reminders/dailyTaskReminders');
 const { getLogs, getSentMessages, clearLogs, logReminder } = require('./lib/logger');
+const { RateLimitedQueue } = require('./lib/sendQueue');
 
 const app = express();
 const server = http.createServer(app);
@@ -70,6 +71,37 @@ function scheduleReinit(delayMs = 3000) {
       console.warn('Erreur lors de la réinitialisation:', e?.message);
     }
   }, delayMs);
+}
+
+// WhatsApp send throttling (prevents burst sending that can trigger bans/blocks)
+// Defaults: 10 messages per 10 minutes, smoothed to ~1/min with some jitter.
+const WA_RATE_WINDOW_MS = process.env.WA_RATE_WINDOW_MS ? Number(process.env.WA_RATE_WINDOW_MS) : 10 * 60 * 1000;
+const WA_RATE_MAX = process.env.WA_RATE_MAX ? Number(process.env.WA_RATE_MAX) : 10;
+const WA_MIN_INTERVAL_MS = process.env.WA_MIN_INTERVAL_MS
+  ? Number(process.env.WA_MIN_INTERVAL_MS)
+  : (Number.isFinite(WA_RATE_WINDOW_MS) && Number.isFinite(WA_RATE_MAX) && WA_RATE_MAX > 0)
+    ? Math.ceil(WA_RATE_WINDOW_MS / WA_RATE_MAX)
+    : 0;
+const WA_JITTER_MS = process.env.WA_JITTER_MS ? Number(process.env.WA_JITTER_MS) : 2500;
+
+const waSendQueue = new RateLimitedQueue({
+  name: 'wa-send',
+  minIntervalMs: WA_MIN_INTERVAL_MS,
+  maxPerWindow: WA_RATE_MAX,
+  windowMs: WA_RATE_WINDOW_MS,
+  jitterMs: WA_JITTER_MS,
+  logger: console,
+});
+
+async function enqueueWaSend(jid, text, meta = {}) {
+  return waSendQueue.enqueue(async () => {
+    if (!isClientReady || !isWaConnected()) {
+      const err = new Error('wa_not_ready');
+      err.code = 'wa_not_ready';
+      throw err;
+    }
+    return client.sendMessage(jid, text);
+  }, { jid, meta });
 }
 
 // CORS (allow calls from frontend)
@@ -157,7 +189,7 @@ io.on('connection', (socket) => {
         return;
       }
 
-      await client.sendMessage(chatId, message);
+      await enqueueWaSend(chatId, message, { source: 'socket_io' });
       console.log('Message envoyé à', phoneNumber);
       socket.emit('message_success', { phoneNumber });
     } catch (err) {
@@ -257,7 +289,8 @@ if (REMINDER_SOURCE === 'api') {
             isWaConnected,
             tz: REMINDER_TZ,
             onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
-            sendDelayMs: REMINDER_SEND_DELAY_MS,
+            sendMessage: enqueueWaSend,
+            sendDelayMs: 0,
             logger: console,
           });
           console.log('[reminders] done', result);
@@ -281,7 +314,8 @@ if (REMINDER_SOURCE === 'api') {
           isWaConnected,
           tz: REMINDER_TZ,
           onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
-          sendDelayMs: REMINDER_SEND_DELAY_MS,
+          sendMessage: enqueueWaSend,
+          sendDelayMs: 0,
           logger: console,
         });
         console.log('[reminders] done', result);
@@ -310,6 +344,7 @@ app.get('/status', async (_req, res) => {
     ready: isClientReady && (state === 'CONNECTED' || lastState === 'CONNECTED'),
     state,
     lastState,
+    sendQueue: waSendQueue.stats(),
     hasQr: !!lastQr,
     lastReadyAt,
     now: Date.now()
@@ -333,7 +368,7 @@ app.post('/send-text', requireApiKey, async (req, res) => {
     }
     if (!phone || !text) return res.status(400).json({ ok: false, error: 'phone_and_text_required' });
     const jid = normalizeToJid(phone);
-    const msg = await client.sendMessage(jid, text);
+    const msg = await enqueueWaSend(jid, text, { source: 'manual_api', endpoint: '/send-text' });
     
     // Logger le message envoyé
     logReminder({
@@ -392,7 +427,7 @@ app.post('/send-template', requireApiKey, async (req, res) => {
     if (!text) throw new Error('Rendered text empty');
 
     const jid = normalizeToJid(phone);
-    const msg = await client.sendMessage(jid, text);
+  const msg = await enqueueWaSend(jid, text, { source: 'manual_api', endpoint: '/send-template', templateKey });
     
     // Logger le message envoyé
     logReminder({
@@ -561,7 +596,8 @@ app.post('/api/send-reminder-test', requireApiKey, async (req, res) => {
         isWaConnected,
         tz: REMINDER_TZ,
         onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
-        sendDelayMs: REMINDER_SEND_DELAY_MS,
+        sendMessage: enqueueWaSend,
+        sendDelayMs: 0,
         logger: console,
       });
     } else if (dbPool) {
@@ -572,7 +608,8 @@ app.post('/api/send-reminder-test', requireApiKey, async (req, res) => {
         isWaConnected,
         tz: REMINDER_TZ,
         onlyEnvoyerAuto: REMINDER_ONLY_ENVOYER_AUTO,
-        sendDelayMs: REMINDER_SEND_DELAY_MS,
+        sendMessage: enqueueWaSend,
+        sendDelayMs: 0,
         logger: console,
       });
     } else {
