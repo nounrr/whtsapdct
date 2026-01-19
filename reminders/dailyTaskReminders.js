@@ -11,6 +11,10 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function shouldSendSeen() {
+  return String(process.env.WA_SEND_SEEN || 'false').toLowerCase() === 'true';
+}
+
 function makeReminderText(row) {
   const assignee = [row.prenom, row.name].filter(Boolean).join(' ').trim() || '—';
 
@@ -160,7 +164,7 @@ async function runDailyTaskReminders({
       if (typeof sendMessage === 'function') {
         await sendMessage(jid, text, { source: 'db', taskId: row.id, tel: row.tel, today });
       } else {
-        await client.sendMessage(jid, text);
+        await client.sendMessage(jid, text, { sendSeen: shouldSendSeen() });
       }
       sent++;
       
@@ -260,7 +264,7 @@ async function runDailyTaskRemindersViaApi({
       if (typeof sendMessage === 'function') {
         await sendMessage(jid, text, { source: 'api', taskId: row.id, tel: row.tel, today, apiBase });
       } else {
-        await client.sendMessage(jid, text);
+        await client.sendMessage(jid, text, { sendSeen: shouldSendSeen() });
       }
       sent++;
       

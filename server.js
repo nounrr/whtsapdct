@@ -102,6 +102,10 @@ const waSendQueue = new RateLimitedQueue({
   logger: console,
 });
 
+// WhatsApp-web.js sometimes crashes inside "sendSeen" after WhatsApp Web updates.
+// Default to false to keep sending messages reliable; can be re-enabled via WA_SEND_SEEN=true.
+const WA_SEND_SEEN = String(process.env.WA_SEND_SEEN || 'false').toLowerCase() === 'true';
+
 async function enqueueWaSend(jid, text, meta = {}) {
   return waSendQueue.enqueue(async () => {
     if (!isClientReady || !isWaConnected()) {
@@ -109,7 +113,7 @@ async function enqueueWaSend(jid, text, meta = {}) {
       err.code = 'wa_not_ready';
       throw err;
     }
-    return client.sendMessage(jid, text);
+    return client.sendMessage(jid, text, { sendSeen: WA_SEND_SEEN });
   }, { jid, meta });
 }
 
