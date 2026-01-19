@@ -1,5 +1,5 @@
 const path = require('path');
-const REMINDER_AT ='18:50';
+const REMINDER_AT ='19:4';
 
 // Load environment variables from .env (use absolute path so it works under PM2/systemd)
 const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -93,28 +93,41 @@ const WA_MIN_INTERVAL_MS = process.env.WA_MIN_INTERVAL_MS
     : 0;
 const WA_JITTER_MS = process.env.WA_JITTER_MS ? Number(process.env.WA_JITTER_MS) : 2500;
 
-const waSendQueue = new RateLimitedQueue({
-  name: 'wa-send',
-  minIntervalMs: WA_MIN_INTERVAL_MS,
-  maxPerWindow: WA_RATE_MAX,
-  windowMs: WA_RATE_WINDOW_MS,
-  jitterMs: WA_JITTER_MS,
-  logger: console,
-});
+// Optional occasional long pause between sends (helps mimic human usage)
+const WA_LONG_PAUSE_CHANCE = process.env.WA_LONG_PAUSE_CHANCE ? Number(process.env.WA_LONG_PAUSE_CHANCE) : 0;
+const WA_LONG_PAUSE_MIN_MS = process.env.WA_LONG_PAUSE_MIN_MS ? Number(process.env.WA_LONG_PAUSE_MIN_MS) : 0;
+const WA_LONG_PAUSE_MAX_MS = process.env.WA_LONG_PAUSE_MAX_MS ? Number(process.env.WA_LONG_PAUSE_MAX_MS) : 0;
 
 // WhatsApp-web.js sometimes crashes inside "sendSeen" after WhatsApp Web updates.
 // Default to false to keep sending messages reliable; can be re-enabled via WA_SEND_SEEN=true.
 const WA_SEND_SEEN = String(process.env.WA_SEND_SEEN || 'false').toLowerCase() === 'true';
 
-async function enqueueWaSend(jid, text, meta = {}) {
-  return waSendQueue.enqueue(async () => {
-    if (!isClientReady || !isWaConnected()) {
-      const err = new Error('wa_not_ready');
-      err.code = 'wa_not_ready';
-      throw err;
+// File to persist queue state
+const QUEUE_FILE = path.join(__dirname, '.queue-persist.json');
+
+const waSendQueue = new RateLimitedQueue({
+  name: 'wa-send',
+  storageFile: QUEUE_FILE,
+  minIntervalMs: WA_MIN_INTERVAL_MS,
+  maxPerWindow: WA_RATE_MAX,
+  windowMs: WA_RATE_WINDOW_MS,
+  jitterMs: WA_JITTER_MS,
+  longPauseChance: WA_LONG_PAUSE_CHANCE,
+  longPauseMinMs: WA_LONG_PAUSE_MIN_MS,
+  longPauseMaxMs: WA_LONG_PAUSE_MAX_MS,
+  logger: console,
+  processor: async ({ jid, text }) => {
+    // Wait for client to be ready (instead of failing immediately if queue loads before content)
+    while (!isClientReady || !isWaConnected()) {
+      await new Promise(r => setTimeout(r, 2000));
     }
     return client.sendMessage(jid, text, { sendSeen: WA_SEND_SEEN });
-  }, { jid, meta });
+  }
+});
+
+async function enqueueWaSend(jid, text, meta = {}) {
+  // Pass data object { jid, text } to be persisted
+  return waSendQueue.enqueue({ jid, text }, { jid, meta });
 }
 
 // CORS (allow calls from frontend)
