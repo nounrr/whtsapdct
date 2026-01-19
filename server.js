@@ -1,4 +1,5 @@
 const path = require('path');
+const REMINDER_AT ='18:50';
 
 // Load environment variables from .env (use absolute path so it works under PM2/systemd)
 const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -39,6 +40,14 @@ const client = new Client({
     // If Chrome is installed locally, you can set CHROME_PATH env to its executable
     executablePath: process.env.CHROME_PATH,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote']
+  },
+  // Désactiver les fonctionnalités qui peuvent causer des erreurs
+  authTimeoutMs: 60000,
+  qrMaxRetries: 5,
+  // Options pour éviter l'erreur "markedUnread"
+  webVersionCache: {
+    type: 'remote',
+    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
   }
 });
 
@@ -229,14 +238,13 @@ function normalizeToJid(phone) {
 }
 
 // Daily reminders
-const REMINDER_TZ = process.env.REMINDER_TZ || 'Africa/Casablanca';
+const REMINDER_TZ =  'Africa/Casablanca';
 
-// Manual reminder time (HH:mm, 24h). Example: '15:57'
-// NOTE: This is intentionally NOT read from .env as requested.
-const REMINDER_AT = '16:00';
+// Reminder time (HH:mm, 24h). Example: '15:57'
+// Lecture depuis .env (REMINDER_AT), sinon par défaut 16:00
 
 // Debug: Log effective configuration
-console.log('[config] REMINDER_AT (manual):', REMINDER_AT);
+console.log('[config] REMINDER_AT:', REMINDER_AT);
 console.log('[config] REMINDER_TZ from env:', process.env.REMINDER_TZ);
 console.log('[config] REMINDER_CRON from env (optional override):', process.env.REMINDER_CRON);
 
