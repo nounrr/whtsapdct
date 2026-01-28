@@ -34,7 +34,10 @@ function requireApiKey(req, res, next) {
 }
 
 const client = new Client({
-  authStrategy: new LocalAuth(),
+  authStrategy: new LocalAuth({
+    clientId: process.env.WWEBJS_CLIENT_ID || undefined,
+    dataPath: process.env.WWEBJS_AUTH_DIR || undefined,
+  }),
   puppeteer: {
     headless: true,
     // If Chrome is installed locally, you can set CHROME_PATH env to its executable
@@ -68,7 +71,40 @@ let isClientReady = false;
 let lastQr = null;
 let lastState = 'INIT';
 let lastReadyAt = null;
+let lastGetState = null;
+let lastGetStateAt = null;
 let reinitTimer = null;
+
+async function refreshClientState() {
+  try {
+    const state = await client.getState();
+    lastGetState = state;
+    lastGetStateAt = Date.now();
+
+    if (typeof state === 'string' && state) {
+      // Keep lastState aligned with what WhatsApp reports (whatsapp-web.js can miss change_state on some updates)
+      lastState = state;
+    }
+
+    // Self-heal: sometimes the WhatsApp Web session is CONNECTED but the 'ready' event never fires.
+    // In that case, allow the service to recover automatically.
+    if (state === 'CONNECTED' && !isClientReady) {
+      console.warn('[wa] state is CONNECTED but isClientReady=false; forcing ready=true');
+      isClientReady = true;
+      lastReadyAt = Date.now();
+      io.emit('ready');
+    }
+
+    if (state !== 'CONNECTED' && isClientReady) {
+      // If WhatsApp reports non-connected state, reflect it.
+      isClientReady = false;
+    }
+
+    return state;
+  } catch (_e) {
+    return null;
+  }
+}
 function scheduleReinit(delayMs = 3000) {
   if (reinitTimer) return;
   reinitTimer = setTimeout(() => {
@@ -290,7 +326,7 @@ const REMINDER_API_BASE = process.env.REMINDER_API_BASE || null; // e.g. https:/
 const REMINDER_API_KEY = process.env.REMINDER_API_KEY || process.env.TEMPLATE_API_KEY || null;
 
 function isWaConnected() {
-  return lastState === 'CONNECTED';
+  return lastState === 'CONNECTED' || lastGetState === 'CONNECTED';
 }
 
 if (REMINDER_SOURCE === 'api') {
@@ -360,11 +396,8 @@ app.get('/health', (_req, res) => {
 
 app.get('/status', async (_req, res) => {
   let state = lastState;
-  try {
-    state = await client.getState();
-  } catch (e) {
-    // keep lastState
-  }
+  const refreshed = await refreshClientState();
+  if (refreshed) state = refreshed;
   res.json({
     ready: isClientReady && (state === 'CONNECTED' || lastState === 'CONNECTED'),
     state,
@@ -372,6 +405,8 @@ app.get('/status', async (_req, res) => {
     sendQueue: waSendQueue.stats(),
     hasQr: !!lastQr,
     lastReadyAt,
+    lastGetState,
+    lastGetStateAt,
     now: Date.now()
   });
 });
@@ -659,6 +694,11 @@ app.post('/api/send-reminder-test', requireApiKey, async (req, res) => {
 });
 
 client.initialize();
+
+// Keep state in sync even if events are missed (WhatsApp Web updates can cause that).
+setInterval(() => {
+  refreshClientState();
+}, 15000).unref?.();
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';

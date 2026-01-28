@@ -7,7 +7,7 @@ echo ""
 
 # Arrêter le service PM2 si actif
 echo -e "\033[1;33m1. Arrêt du service...\033[0m"
-pm2 stop whtsp-service 2>/dev/null
+pm2 stop whatsapp 2>/dev/null
 if [ $? -eq 0 ]; then
     echo -e "\033[1;32m   Service arrêté\033[0m"
 else
